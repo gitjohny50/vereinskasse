@@ -1,0 +1,19 @@
+[Unit]
+# Chromium-Kiosk. Startet nach dem Backend und zeigt die Kassenoberfläche.
+Description=Vereinskasse Kiosk (Chromium)
+After=vereinskasse-backend.service graphical.target
+Wants=vereinskasse-backend.service
+
+[Service]
+Type=simple
+User=kasse
+Group=kasse
+# Anzeige des lokalen X-Servers.
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/kasse/.Xauthority
+ExecStart=/opt/vereinskasse/deploy/kiosk-start.sh
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=graphical.target

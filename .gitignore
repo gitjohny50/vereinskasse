@@ -1,0 +1,37 @@
+# === Python / Backend ===
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+backend/.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# === Datenbank & Laufzeitdaten (NIEMALS einchecken) ===
+# Die produktive DB liegt im VK_DATA_DIR (z. B. /opt/vereinskasse-daten),
+# also außerhalb des Repos. Diese Muster fangen lokale Dev-Daten ab.
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+mock-drucker.log
+/daten/
+backend/daten/
+
+# === Node / Frontend-Build ===
+node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# === Umgebung / Geheimnisse ===
+.env
+.env.*
+!.env.example
+
+# === Editor / Betriebssystem ===
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

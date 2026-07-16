@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# post-receive-Hook für ein "bare" Repo auf dem Pi.
+#
+# Einrichtung auf dem Pi (einmalig):
+#   git init --bare /home/kasse/vereinskasse.git
+#   cp /opt/vereinskasse/deploy/git-hooks/post-receive /home/kasse/vereinskasse.git/hooks/
+#   chmod +x /home/kasse/vereinskasse.git/hooks/post-receive
+#
+# Danach auf dem Entwicklungsrechner:
+#   git remote add pi kasse@<pi-ip>:/home/kasse/vereinskasse.git
+#   git push pi main        # -> checkout nach /opt/vereinskasse + deploy/update.sh
+set -euo pipefail
+
+APP_DIR="/opt/vereinskasse"
+BRANCH="main"
+GIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+while read -r _old _new ref; do
+  if [ "$ref" = "refs/heads/$BRANCH" ]; then
+    echo ">> Rolle Branch '$BRANCH' nach $APP_DIR aus"
+    git --work-tree="$APP_DIR" --git-dir="$GIT_DIR" checkout -f "$BRANCH"
+    "$APP_DIR/deploy/update.sh"
+  fi
+done

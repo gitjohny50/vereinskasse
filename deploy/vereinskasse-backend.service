@@ -1,0 +1,26 @@
+[Unit]
+# Backend-Dienst der Vereinskasse (FastAPI/uvicorn).
+# Lastenheft 5.4: Backend als automatisch startender Systemdienst, bei Fehler
+# automatischer Neustart.
+Description=Vereinskasse Backend (FastAPI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kasse
+Group=kasse
+WorkingDirectory=/opt/vereinskasse/backend
+# Datenverzeichnis auf der NVMe-SSD (Lastenheft 4.1, 5.3).
+Environment=VK_DATA_DIR=/opt/vereinskasse-daten
+Environment=VK_HOST=127.0.0.1
+Environment=VK_PORT=8000
+ExecStart=/opt/vereinskasse/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=2
+# Absicherung
+NoNewPrivileges=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

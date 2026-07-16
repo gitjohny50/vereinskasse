@@ -1,0 +1,1 @@
+"""Hardware-Adapter und Druckdienst."""

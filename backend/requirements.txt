@@ -1,0 +1,18 @@
+# Kern-Backend (Phase 1)
+fastapi>=0.110
+uvicorn[standard]>=0.29
+sqlalchemy>=2.0
+pydantic>=2.6
+
+# Später (Phasen 2+): Migrationen und Excel-Export
+alembic>=1.13
+openpyxl>=3.1
+
+# Hardware-Transport auf dem Raspberry Pi (nicht im Sandbox-/CI-Betrieb nötig).
+# Erst auf dem Gerät installieren:
+#   pyusb>=1.2        # USB-Drucker
+# Netzwerkdruck (Ethernet) benötigt keine Zusatzbibliothek.
+
+# Test
+pytest>=8.0
+httpx>=0.27
