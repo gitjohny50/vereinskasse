@@ -36,6 +36,8 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 export interface Health { status: string; version: string; db_integrity: string; }
 export interface PrinterStatus { reachable: boolean; known: boolean; paper_ok: boolean | null; cover_closed: boolean | null; detail: string; }
 export interface ActionResult { ok: boolean; detail: string; auftrag_id: number | null; drucker: string | null; }
+export interface UsbGeraet { vendor_id: string; product_id: string; hersteller: string; produkt: string; beschreibung: string; }
+export interface UsbListe { pyusb_installiert: boolean; geraete: UsbGeraet[]; hinweis: string; }
 export interface Setting { schluessel: string; wert: string; beschreibung: string; }
 export interface LoginUser { id: number; name: string; }
 export interface Session { token: string; benutzer_id: number; name: string; rolle: string; stufe: number; }
@@ -99,6 +101,7 @@ export const api = {
   // System / Diagnose
   health: () => req<Health>("/health"),
   printerStatus: () => req<PrinterStatus>("/diagnose/drucker/status"),
+  usbGeraete: () => req<UsbListe>("/diagnose/drucker/usb-geraete"),
   testPage: () => req<ActionResult>("/diagnose/drucker/testseite", { method: "POST" }),
   cutTest: (anzahl: number) => req<ActionResult>("/diagnose/drucker/schnitt-test", { method: "POST", body: j({ anzahl }) }),
   openDrawer: (grund: string) => req<ActionResult>("/diagnose/schublade/oeffnen", { method: "POST", body: j({ grund }) }),

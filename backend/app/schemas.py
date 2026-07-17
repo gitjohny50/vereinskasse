@@ -454,3 +454,20 @@ class KassenabschlussKopfOut(BaseModel):
     bar_cent: int
     gezaehlt_cent: int | None
     differenz_cent: int | None
+
+
+# ===================================================================
+# USB-Geräteliste (Drucker-Einrichtung)
+# ===================================================================
+class UsbGeraetOut(BaseModel):
+    vendor_id: str
+    product_id: str
+    hersteller: str
+    produkt: str
+    beschreibung: str
+
+
+class UsbListeOut(BaseModel):
+    pyusb_installiert: bool
+    geraete: list[UsbGeraetOut] = []
+    hinweis: str = ""

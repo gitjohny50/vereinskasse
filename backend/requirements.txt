@@ -8,10 +8,11 @@ pydantic>=2.6
 alembic>=1.13
 openpyxl>=3.1
 
-# Hardware-Transport auf dem Raspberry Pi (nicht im Sandbox-/CI-Betrieb nötig).
-# Erst auf dem Gerät installieren:
-#   pyusb>=1.2        # USB-Drucker
+# Hardware-Transport.
+# USB-Drucker: benötigt zusätzlich die System-Bibliothek libusb
+#   sudo apt install -y libusb-1.0-0
 # Netzwerkdruck (Ethernet) benötigt keine Zusatzbibliothek.
+pyusb>=1.2
 
 # Test
 pytest>=8.0

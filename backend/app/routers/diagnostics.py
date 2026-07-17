@@ -13,7 +13,7 @@ from ..auth import require_service
 from ..database import get_session
 from ..hardware import service
 from ..models import Benutzer
-from ..schemas import ActionResult, CutTestIn, DrawerOpenIn, PrinterStatusOut
+from ..schemas import ActionResult, CutTestIn, DrawerOpenIn, PrinterStatusOut, UsbListeOut
 
 # Hardware-Diagnose erfordert Servicetechniker-Rechte (Lastenheft 6.3).
 router = APIRouter(prefix="/api/diagnose", tags=["diagnose"], dependencies=[Depends(require_service)])
@@ -29,6 +29,13 @@ def drucker_status(session: Session = Depends(get_session)) -> PrinterStatusOut:
         cover_closed=st.cover_closed,
         detail=st.detail,
     )
+
+
+@router.get("/drucker/usb-geraete", response_model=UsbListeOut)
+def usb_geraete() -> UsbListeOut:
+    """Angeschlossene USB-Geräte auflisten, um Hersteller-/Produkt-ID des
+    Druckers ohne 'lsusb' zu ermitteln."""
+    return UsbListeOut(**service.list_usb_devices())
 
 
 @router.post("/drucker/testseite", response_model=ActionResult)

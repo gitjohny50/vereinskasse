@@ -315,3 +315,39 @@ def build_bericht_bytes(cfg: dict[str, str], bericht: dict, profil_name: str) ->
     b.feed(1).align("center").line("* * *")
     b.cut(mode=cfg.get("schnitt.modus", "partial"), feed_lines=int(cfg.get("schnitt.vorschub_zeilen", "3")))
     return b.build()
+
+
+def list_usb_devices() -> dict:
+    """Listet angeschlossene USB-Geräte für die Drucker-Einrichtung auf.
+
+    Liefert Hersteller-/Produkt-ID (als 0x-Hex, direkt in die Einstellungen
+    übernehmbar) und - soweit lesbar - Klartextnamen. Ist pyusb nicht
+    installiert, wird das gemeldet, ohne dass ein Fehler auftritt.
+    """
+    try:
+        import usb.core
+        import usb.util
+    except Exception:  # pyusb nicht installiert
+        return {"pyusb_installiert": False, "geraete": []}
+
+    geraete: list[dict] = []
+    try:
+        for dev in usb.core.find(find_all=True):
+            def _str(index: int) -> str:
+                try:
+                    return usb.util.get_string(dev, index) or ""
+                except Exception:
+                    return ""
+            hersteller = _str(dev.iManufacturer) if dev.iManufacturer else ""
+            produkt = _str(dev.iProduct) if dev.iProduct else ""
+            beschreibung = (f"{hersteller} {produkt}").strip() or f"{dev.idVendor:04x}:{dev.idProduct:04x}"
+            geraete.append({
+                "vendor_id": f"0x{dev.idVendor:04x}",
+                "product_id": f"0x{dev.idProduct:04x}",
+                "hersteller": hersteller,
+                "produkt": produkt,
+                "beschreibung": beschreibung,
+            })
+    except Exception as exc:  # z. B. fehlende Berechtigungen
+        return {"pyusb_installiert": True, "geraete": [], "hinweis": f"USB-Suche fehlgeschlagen: {exc}"}
+    return {"pyusb_installiert": True, "geraete": geraete}

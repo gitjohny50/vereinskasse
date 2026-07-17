@@ -1,0 +1,12 @@
+# USB-Zugriff auf den Bon-Drucker ohne root-Rechte.
+#
+# idVendor/idProduct an das eigene Gerät anpassen: die Werte findest du im
+# Service-Reiter über "USB-Geräte suchen" (oder mit 'lsusb'). Hier ohne "0x",
+# vierstellig und klein geschrieben eintragen (Beispiel unten: 0416:5011).
+#
+# Installieren:
+#   sudo cp deploy/99-vereinskasse-usb.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+# Danach den Drucker einmal aus- und wieder einstecken.
+
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0416", ATTRS{idProduct}=="5011", MODE="0666"

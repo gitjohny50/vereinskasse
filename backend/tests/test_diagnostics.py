@@ -51,3 +51,17 @@ def test_settings_roundtrip(client):
 
     r3 = client.put("/api/einstellungen/unbekannt.key", json={"wert": "x"})
     assert r3.status_code == 404
+
+
+def test_usb_geraete_liste(client):
+    """USB-Geräteliste für die Drucker-Einrichtung: liefert strukturierte Antwort,
+    auch wenn pyusb/libusb in der Umgebung fehlt (dann leere Liste, kein Fehler)."""
+    r = client.get("/api/diagnose/drucker/usb-geraete")
+    assert r.status_code == 200
+    body = r.json()
+    assert "pyusb_installiert" in body
+    assert isinstance(body["geraete"], list)
+
+
+def test_usb_geraete_nur_service(bediener_client):
+    assert bediener_client.get("/api/diagnose/drucker/usb-geraete").status_code == 403

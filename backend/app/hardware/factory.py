@@ -25,6 +25,7 @@ DEFAULT_HW_SETTINGS: dict[str, str] = {
     "drucker.usb.endpoint": "0x01",
     "drucker.codepage_id": "19",          # CP858 (Euro/Umlaute) - am Gerät prüfen
     "drucker.encoding": "cp858",
+    "bon.breite_zeichen": "42",           # 80mm-Papier: meist 42-48 Zeichen
     # Schnitt (Lastenheft 14.6)
     "schnitt.modus": "partial",           # partial | full | none
     "schnitt.vorschub_zeilen": "3",

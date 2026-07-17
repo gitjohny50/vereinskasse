@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type ActionResult, type Health, type PrinterStatus, type Setting } from "../api";
+import { api, type ActionResult, type Health, type PrinterStatus, type Setting, type UsbGeraet, type UsbListe } from "../api";
 
 type DotKind = "ok" | "warn" | "danger" | "unknown";
 
@@ -36,7 +36,12 @@ const SETTING_ORDER = [
   "drucker.transport",
   "drucker.netzwerk.host",
   "drucker.netzwerk.port",
+  "drucker.usb.vendor_id",
+  "drucker.usb.product_id",
+  "drucker.usb.endpoint",
+  "drucker.encoding",
   "drucker.codepage_id",
+  "bon.breite_zeichen",
   "schnitt.modus",
   "schnitt.vorschub_zeilen",
   "schublade.aktiv",
@@ -44,6 +49,25 @@ const SETTING_ORDER = [
   "schublade.puls_ms",
   "schublade.pause_ms",
 ];
+
+// Klartext-Beschriftungen (Fallback: der Schlüssel selbst).
+const LABELS: Record<string, string> = {
+  "drucker.transport": "Anschlussart",
+  "drucker.netzwerk.host": "Netzwerk: IP-Adresse",
+  "drucker.netzwerk.port": "Netzwerk: Port",
+  "drucker.usb.vendor_id": "USB: Hersteller-ID",
+  "drucker.usb.product_id": "USB: Produkt-ID",
+  "drucker.usb.endpoint": "USB: Endpunkt",
+  "drucker.encoding": "Zeichenkodierung",
+  "drucker.codepage_id": "Codepage-ID",
+  "bon.breite_zeichen": "Bonbreite (Zeichen)",
+  "schnitt.modus": "Schnitt-Modus",
+  "schnitt.vorschub_zeilen": "Schnitt: Vorschubzeilen",
+  "schublade.aktiv": "Schublade aktiv",
+  "schublade.pin": "Schublade: Pin",
+  "schublade.puls_ms": "Schublade: Puls (ms)",
+  "schublade.pause_ms": "Schublade: Pause (ms)",
+};
 
 export function Diagnose() {
   const [health, setHealth] = useState<Health | null>(null);
@@ -54,6 +78,8 @@ export function Diagnose() {
   const [testResult, setTestResult] = useState<ActionResult | null>(null);
   const [cutResult, setCutResult] = useState<ActionResult | null>(null);
   const [drawerResult, setDrawerResult] = useState<ActionResult | null>(null);
+  const [usbList, setUsbList] = useState<UsbListe | null>(null);
+  const [usbBusy, setUsbBusy] = useState(false);
 
   async function refreshStatus() {
     try {
@@ -124,9 +150,30 @@ export function Diagnose() {
     }
   }
 
-  const orderedSettings = SETTING_ORDER.map((k) => settings.find((s) => s.schluessel === k)).filter(
-    (s): s is Setting => Boolean(s)
-  );
+  async function sucheUsb() {
+    setUsbBusy(true);
+    try {
+      setUsbList(await api.usbGeraete());
+    } catch {
+      setUsbList({ pyusb_installiert: false, geraete: [], hinweis: "Abruf fehlgeschlagen." });
+    } finally {
+      setUsbBusy(false);
+    }
+  }
+  async function uebernehmeUsb(g: UsbGeraet) {
+    await saveSetting("drucker.usb.vendor_id", g.vendor_id);
+    await saveSetting("drucker.usb.product_id", g.product_id);
+  }
+
+  const transport = settings.find((s) => s.schluessel === "drucker.transport")?.wert ?? "mock";
+  const orderedSettings = SETTING_ORDER
+    .filter((k) => {
+      if (k.startsWith("drucker.netzwerk.")) return transport === "network";
+      if (k.startsWith("drucker.usb.")) return transport === "usb";
+      return true;
+    })
+    .map((k) => settings.find((s) => s.schluessel === k))
+    .filter((s): s is Setting => Boolean(s));
 
   return (
     <>
@@ -199,7 +246,7 @@ export function Diagnose() {
         {orderedSettings.length === 0 && <div className="setting"><span className="key">Lade Einstellungen…</span><span /></div>}
         {orderedSettings.map((s) => (
           <div className="setting" key={s.schluessel}>
-            <span className="key">{s.schluessel}</span>
+            <span className="key">{LABELS[s.schluessel] ?? s.schluessel}</span>
             {SELECT_OPTIONS[s.schluessel] ? (
               <select value={s.wert} onChange={(e) => saveSetting(s.schluessel, e.target.value)}>
                 {SELECT_OPTIONS[s.schluessel].map((opt) => (
@@ -208,6 +255,7 @@ export function Diagnose() {
               </select>
             ) : (
               <input
+                key={s.wert}
                 defaultValue={s.wert}
                 onBlur={(e) => e.target.value !== s.wert && saveSetting(s.schluessel, e.target.value)}
               />
@@ -215,6 +263,45 @@ export function Diagnose() {
           </div>
         ))}
       </div>
+
+      {transport === "usb" && (
+        <div className="card" style={{ marginTop: 12 }}>
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+            <strong>USB-Drucker einrichten</strong>
+            <button className="btn btn-sm" disabled={usbBusy} onClick={sucheUsb}>
+              {usbBusy ? "Suche…" : "USB-Geräte suchen"}
+            </button>
+          </div>
+          {usbList && !usbList.pyusb_installiert && (
+            <p className="note" style={{ marginTop: 8 }}>
+              USB-Unterstützung nicht verfügbar (pyusb/libusb fehlt). Siehe deploy/USB-DRUCKER.md.
+              {usbList.hinweis && ` – ${usbList.hinweis}`}
+            </p>
+          )}
+          {usbList && usbList.pyusb_installiert && usbList.geraete.length === 0 && (
+            <p className="note" style={{ marginTop: 8 }}>Keine USB-Geräte gefunden{usbList.hinweis ? ` – ${usbList.hinweis}` : ""}.</p>
+          )}
+          {usbList && usbList.geraete.length > 0 && (
+            <table className="tabelle" style={{ marginTop: 8 }}>
+              <thead><tr><th>Gerät</th><th>Hersteller-ID</th><th>Produkt-ID</th><th className="num"></th></tr></thead>
+              <tbody>
+                {usbList.geraete.map((g, i) => (
+                  <tr key={`${g.vendor_id}:${g.product_id}:${i}`}>
+                    <td>{g.beschreibung}</td>
+                    <td className="mono">{g.vendor_id}</td>
+                    <td className="mono">{g.product_id}</td>
+                    <td className="num"><button className="btn btn-sm btn-primary" onClick={() => uebernehmeUsb(g)}>Übernehmen</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="note" style={{ marginTop: 8 }}>
+            Beim Drucker auf „Übernehmen“ tippen – Hersteller- und Produkt-ID werden gesetzt. Für den Zugriff
+            ohne root ist einmalig die udev-Regel nötig (deploy/USB-DRUCKER.md).
+          </p>
+        </div>
+      )}
 
       <p className="note">
         Alle Schnitt-, Schubladen- und USB-Parameter sind Platzhalter, bis sie am echten NetumScan NS-8360L
