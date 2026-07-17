@@ -151,6 +151,7 @@ export const api = {
   verkaeufe: (pid: number) => req<Verkauf[]>(`/verkauf?kassenprofil_id=${pid}`),
   verkaufDetail: (id: number) => req<Verkauf>(`/verkauf/${id}`),
   nachdruck: (id: number) => req<ActionResult>(`/verkauf/${id}/nachdruck`, { method: "POST" }),
+  belegDrucken: (id: number) => req<ActionResult>(`/verkauf/${id}/beleg`, { method: "POST" }),
 
   // Druckwarteschlange
   druckauftraege: (status?: string) => req<Druckauftrag[]>(`/druckwarteschlange${status ? `?status=${encodeURIComponent(status)}` : ""}`),

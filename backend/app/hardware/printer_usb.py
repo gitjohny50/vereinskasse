@@ -22,7 +22,7 @@ class UsbPrinter(PrinterAdapter):
 
     def _open(self):
         import usb.core  # lazy import
-        import usb.util
+        import usb.util  # noqa: F401
 
         dev = usb.core.find(idVendor=self.vendor_id, idProduct=self.product_id)
         if dev is None:
@@ -35,20 +35,42 @@ class UsbPrinter(PrinterAdapter):
                 dev.detach_kernel_driver(0)
         except (NotImplementedError, Exception):  # noqa: BLE001 - plattformabhängig
             pass
-        dev.set_configuration()
+        # Konfiguration setzen; ist sie schon aktiv, ignorieren wir den Fehler.
+        try:
+            dev.set_configuration()
+        except Exception:  # noqa: BLE001
+            pass
         return dev
 
     def send(self, payload: bytes) -> PrintResult:
+        import usb.util
+        dev = None
         try:
             dev = self._open()
             dev.write(self.out_endpoint, payload, timeout=self.timeout_ms)
             return PrintResult(ok=True, detail="USB", bytes_sent=len(payload))
         except Exception as exc:  # noqa: BLE001 - jede USB-Störung sauber melden
             return PrintResult(ok=False, detail=f"USB-Fehler: {exc}", bytes_sent=0)
+        finally:
+            # Schnittstelle nach JEDEM Druck wieder freigeben und Kernel-Treiber
+            # zurückgeben - sonst ist das Gerät beim nächsten Druck "busy" (Errno 16).
+            if dev is not None:
+                try:
+                    usb.util.dispose_resources(dev)
+                except Exception:  # noqa: BLE001
+                    pass
 
     def status(self) -> PrinterStatus:
+        import usb.util
+        dev = None
         try:
-            self._open()
+            dev = self._open()
             return PrinterStatus(reachable=True, known=False, detail="USB-Gerät gefunden (Detailstatus unbekannt)")
         except Exception as exc:  # noqa: BLE001
             return PrinterStatus(reachable=False, known=True, detail=f"USB nicht erreichbar: {exc}")
+        finally:
+            if dev is not None:
+                try:
+                    usb.util.dispose_resources(dev)
+                except Exception:  # noqa: BLE001
+                    pass

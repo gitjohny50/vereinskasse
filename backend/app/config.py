@@ -27,7 +27,7 @@ class Settings:
     port: int = int(os.environ.get("VK_PORT", "8000"))
     # Frontend-Herkunft für CORS im Entwicklungsbetrieb.
     frontend_origin: str = os.environ.get("VK_FRONTEND_ORIGIN", "http://localhost:5173")
-    app_version: str = "0.5.1-phase5"
+    app_version: str = "0.5.2-phase5"
 
     @property
     def db_path(self) -> Path:

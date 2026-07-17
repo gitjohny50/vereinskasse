@@ -34,6 +34,10 @@ DEFAULT_HW_SETTINGS: dict[str, str] = {
     "schublade.pin": "0",                 # 0 = Pin 2, 1 = Pin 5
     "schublade.puls_ms": "100",
     "schublade.pause_ms": "100",
+
+    # Verkaufsdruck: 1 = Beleg (Bon) automatisch bei jedem Verkauf drucken,
+    # 0 = nur die Artikeltickets drucken; der Beleg kommt nur auf Knopfdruck.
+    "verkauf.beleg_autodruck": "0",
 }
 
 

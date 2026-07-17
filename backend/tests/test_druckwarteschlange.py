@@ -35,18 +35,43 @@ def _kasse(client):
     return pid, arts, zm
 
 
-def test_verkauf_reiht_bon_und_tickets_ein(client):
+def test_verkauf_druckt_tickets_ohne_beleg(client):
+    """Standard (verkauf.beleg_autodruck=0): pro Artikel ein Ticket, KEIN
+    automatischer Beleg; bei Barzahlung wird die Schublade separat geöffnet."""
     pid, arts, zm = _kasse(client)
     client.post("/api/verkauf", json={
         "kassenprofil_id": pid, "artikel": [{"artikel_id": arts["Cola"]["id"], "menge": 1}],
         "zahlungsmethode_id": zm["Bar"]["id"], "gegeben_cent": 1000})
-    jobs = client.get("/api/druckwarteschlange").json()
-    typen = {j["dokumenttyp"] for j in jobs}
-    assert {"Bon", "Artikelticket"} <= typen
-    # Mock-Drucker druckt erfolgreich -> keine offenen Aufträge
-    assert all(j["status"] == "erfolgreich" for j in jobs)
+    typen = {j["dokumenttyp"] for j in client.get("/api/druckwarteschlange").json()}
+    assert "Artikelticket" in typen
+    assert "Bon" not in typen
+    assert "Schublade" in typen
     st = client.get("/api/druckwarteschlange/status").json()
-    assert st["offen"] == 0 and st["erfolgreich"] >= 2
+    assert st["offen"] == 0
+
+
+def test_beleg_autodruck_an_druckt_bon(client):
+    """Bei verkauf.beleg_autodruck=1 kommt der Bon automatisch (Schublade im Bon)."""
+    pid, arts, zm = _kasse(client)
+    client.put("/api/einstellungen/verkauf.beleg_autodruck", json={"wert": "1"})
+    client.post("/api/verkauf", json={
+        "kassenprofil_id": pid, "artikel": [{"artikel_id": arts["Cola"]["id"], "menge": 1}],
+        "zahlungsmethode_id": zm["Bar"]["id"], "gegeben_cent": 1000})
+    typen = {j["dokumenttyp"] for j in client.get("/api/druckwarteschlange").json()}
+    assert {"Bon", "Artikelticket"} <= typen
+    assert "Schublade" not in typen
+
+
+def test_beleg_auf_knopfdruck(client):
+    """Beleg lässt sich für einen Verkauf gezielt anfordern (dokumenttyp 'Beleg')."""
+    pid, arts, zm = _kasse(client)
+    v = client.post("/api/verkauf", json={
+        "kassenprofil_id": pid, "artikel": [{"artikel_id": arts["Pommes"]["id"], "menge": 1}],
+        "zahlungsmethode_id": zm["Bar"]["id"], "gegeben_cent": 500}).json()
+    r = client.post(f"/api/verkauf/{v['id']}/beleg")
+    assert r.status_code == 200 and r.json()["ok"] is True
+    typen = {j["dokumenttyp"] for j in client.get("/api/druckwarteschlange").json()}
+    assert "Beleg" in typen
 
 
 def test_wiederholung_bis_max_dann_fehlgeschlagen():

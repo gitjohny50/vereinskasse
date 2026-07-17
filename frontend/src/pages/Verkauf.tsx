@@ -221,7 +221,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
             {erfolg.zahlung && erfolg.zahlung.rueckgeld_cent > 0 && (
               <div className="rueckgeld-gross">Rückgeld {formatCents(erfolg.zahlung.rueckgeld_cent)}</div>
             )}
-            <button className="btn btn-sm" onClick={() => api.nachdruck(erfolg.id)}>Bon nachdrucken</button>
+            <button className="btn btn-sm" onClick={() => api.belegDrucken(erfolg.id)}>Beleg drucken</button>
           </div>
         )}
       </aside>

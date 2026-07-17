@@ -30,6 +30,7 @@ const SELECT_OPTIONS: Record<string, string[]> = {
   "schnitt.modus": ["partial", "full", "none"],
   "schublade.aktiv": ["1", "0"],
   "schublade.pin": ["0", "1"],
+  "verkauf.beleg_autodruck": ["1", "0"],
 };
 
 const SETTING_ORDER = [
@@ -48,6 +49,7 @@ const SETTING_ORDER = [
   "schublade.pin",
   "schublade.puls_ms",
   "schublade.pause_ms",
+  "verkauf.beleg_autodruck",
 ];
 
 // Klartext-Beschriftungen (Fallback: der Schlüssel selbst).
@@ -67,6 +69,7 @@ const LABELS: Record<string, string> = {
   "schublade.pin": "Schublade: Pin",
   "schublade.puls_ms": "Schublade: Puls (ms)",
   "schublade.pause_ms": "Schublade: Pause (ms)",
+  "verkauf.beleg_autodruck": "Beleg automatisch drucken (1/0)",
 };
 
 export function Diagnose() {
