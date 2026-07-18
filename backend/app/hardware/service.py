@@ -244,17 +244,20 @@ def build_tickets_bytes(cfg: dict[str, str], tickets: list[str], belegnummer: st
     return b.build()
 
 
-def build_ticket_bytes(cfg: dict[str, str], bezeichnung: str, belegnummer: str) -> bytes:
-    """Ein einzelnes Artikelticket (für getrennte Druckaufträge je Artikel)."""
+def build_ticket_bytes(cfg: dict[str, str], bezeichnung: str, belegnummer: str, kopf: str = "") -> bytes:
+    """Ein einzelnes Artikelticket (für getrennte Druckaufträge je Artikel).
+    ``kopf`` erscheint klein über dem Artikelnamen (z. B. der Vereinsname)."""
     b = _builder(cfg)
     b.init()
-    _ticket_block(b, cfg, bezeichnung, belegnummer)
+    _ticket_block(b, cfg, bezeichnung, belegnummer, kopf)
     return b.build()
 
 
-def _ticket_block(b, cfg: dict[str, str], bezeichnung: str, belegnummer: str) -> None:
+def _ticket_block(b, cfg: dict[str, str], bezeichnung: str, belegnummer: str, kopf: str = "") -> None:
     mode = cfg.get("schnitt.modus", "partial")
     feed = int(cfg.get("schnitt.vorschub_zeilen", "3"))
+    if kopf:
+        b.align("center").bold(False).size(1, 1).line(kopf)
     b.align("center").bold(True).size(2, 2).line(bezeichnung)
     b.size(1, 1).bold(False).line(f"Beleg {belegnummer}")
     b.cut(mode=mode, feed_lines=feed)

@@ -173,6 +173,11 @@ def druck_verkauf(session: Session, verkauf_id: int, schublade: bool, printer: P
     positionen = hw._pos_dicts(verkauf)
     auto_beleg = cfg.get("verkauf.beleg_autodruck", "1") == "1"
 
+    # Vereinsname für die Kopfzeile der Artikeltickets ermitteln.
+    profil = session.get(models.Kassenprofil, verkauf.kassenprofil_id)
+    verein = session.get(models.Verein, profil.verein_id) if profil else None
+    verein_name = verein.name if verein else ""
+
     jobs: list[models.Druckauftrag] = []
 
     if auto_beleg:
@@ -182,10 +187,10 @@ def druck_verkauf(session: Session, verkauf_id: int, schublade: bool, printer: P
 
     # Jedes Artikelticket als EIGENEN Auftrag: so erscheint jeder Artikel einzeln
     # im Druckprotokoll und lässt sich einzeln wiederholen; ein hängendes Ticket
-    # blockiert die übrigen nicht mehr.
+    # blockiert die übrigen nicht mehr. Der Vereinsname steht als Kopfzeile darauf.
     tickets = hw._ticket_liste(positionen)
     for bez in tickets:
-        payload = hw.build_ticket_bytes(cfg, bez, verkauf.belegnummer)
+        payload = hw.build_ticket_bytes(cfg, bez, verkauf.belegnummer, kopf=verein_name)
         jobs.append(enqueue(session, dokumenttyp="Artikelticket", payload=payload,
                             verkauf_id=verkauf.id, bezeichnung=bez))
 

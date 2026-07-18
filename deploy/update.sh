@@ -15,9 +15,10 @@ cd "$APP_DIR/backend"
 .venv/bin/pip install -q --upgrade pip
 .venv/bin/pip install -q -r requirements.txt
 
-echo "== 2/4  Datenbank-Migrationen =="
-# Legt die DB beim ersten Mal an und bringt sie sonst auf den neuesten Stand.
-VK_DATA_DIR="$DATA_DIR" .venv/bin/alembic upgrade head
+echo "== 2/4  Datenbank =="
+# Das Schema wird beim Start der App selbst angelegt/ergänzt (create_all +
+# automatisches Nachrüsten fehlender Spalten). Kein separater Migrationsschritt nötig.
+echo "   (Schema wird beim Dienststart automatisch aktualisiert)"
 
 echo "== 3/4  Frontend bauen =="
 cd "$APP_DIR/frontend"

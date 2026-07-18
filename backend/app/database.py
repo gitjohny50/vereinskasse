@@ -55,10 +55,58 @@ def get_session():
 
 
 def init_db() -> None:
-    """Legt fehlende Tabellen an. In späteren Phasen übernimmt das Alembic."""
+    """Legt fehlende Tabellen an und ergänzt fehlende Spalten.
+
+    Die App verwaltet ihr SQLite-Schema damit selbst: ``create_all`` erzeugt neue
+    Tabellen, ``_ensure_columns`` fügt bei bestehenden Tabellen neu hinzugekommene
+    Spalten nach. So genügt nach einem Update ein Neustart - ohne separate
+    Migrationsschritte.
+    """
     from . import models  # noqa: F401  (Import registriert die Modelle)
+    from sqlalchemy import inspect
 
     Base.metadata.create_all(bind=engine)
+    _ensure_columns(inspect(engine))
+
+
+def _sql_default(col) -> str | None:
+    """Ermittelt einen DEFAULT-Wert für eine nachzurüstende NOT-NULL-Spalte."""
+    from sqlalchemy import Boolean, DateTime, Integer, Numeric
+
+    default = getattr(col, "default", None)
+    if default is not None and getattr(default, "is_scalar", False):
+        val = default.arg
+        if isinstance(val, bool):
+            return "1" if val else "0"
+        if isinstance(val, (int, float)):
+            return str(val)
+        if isinstance(val, str):
+            return "'" + val.replace("'", "''") + "'"
+    if isinstance(col.type, Boolean):
+        return "0"
+    if isinstance(col.type, (Integer, Numeric)):
+        return "0"
+    if isinstance(col.type, DateTime):
+        return "CURRENT_TIMESTAMP"
+    return "''"
+
+
+def _ensure_columns(inspector) -> None:
+    """Fügt Spalten, die im Modell existieren, in der DB aber (noch) fehlen,
+    per ALTER TABLE hinzu. Nur additiv - es wird nie etwas geändert/gelöscht."""
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if not inspector.has_table(table.name):
+                continue
+            vorhanden = {c["name"] for c in inspector.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in vorhanden:
+                    continue
+                typ = col.type.compile(dialect=engine.dialect)
+                zusatz = ""
+                if not col.nullable:
+                    zusatz = f" NOT NULL DEFAULT {_sql_default(col)}"
+                conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {typ}{zusatz}'))
 
 
 def integrity_check() -> str:
