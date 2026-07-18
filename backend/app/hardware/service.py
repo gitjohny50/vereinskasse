@@ -256,10 +256,16 @@ def build_ticket_bytes(cfg: dict[str, str], bezeichnung: str, belegnummer: str, 
 def _ticket_block(b, cfg: dict[str, str], bezeichnung: str, belegnummer: str, kopf: str = "") -> None:
     mode = cfg.get("schnitt.modus", "partial")
     feed = int(cfg.get("schnitt.vorschub_zeilen", "3"))
+    # Jede Zeile setzt Ausrichtung, Größe und Fettdruck explizit, damit nichts von
+    # der vorigen Zeile "nachwirkt". Reihenfolge: Verein klein, Artikel groß, Beleg klein.
     if kopf:
-        b.align("center").bold(False).size(1, 1).line(kopf)
-    b.align("center").bold(True).size(2, 2).line(bezeichnung)
-    b.size(1, 1).bold(False).line(f"Beleg {belegnummer}")
+        b.align("center").size(1, 1).bold(False).line(kopf)
+    # Artikelname deutlich größer (doppelte Breite und Höhe) und fett.
+    b.align("center").size(2, 2).bold(True).line(bezeichnung)
+    # Nach der großen Zeile ein Vorschub - sonst verschluckt der Drucker die
+    # ersten Zeichen der Folgezeile (das war die Ursache für "eg" statt "Beleg").
+    b.size(1, 1).bold(False).feed(1)
+    b.align("center").line(f"Beleg {belegnummer}")
     b.cut(mode=mode, feed_lines=feed)
 
 
