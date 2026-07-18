@@ -11,6 +11,7 @@ import tempfile
 os.environ.setdefault("VK_DATA_DIR", tempfile.mkdtemp(prefix="vk-test-"))
 os.environ.setdefault("VK_INITIAL_ADMIN_PIN", "123456")
 os.environ.setdefault("VK_PBKDF2_ITERATIONS", "1000")  # nur für Tests, Produktiv bleibt hoch
+os.environ.setdefault("VK_PRINT_WORKER", "0")  # Hintergrund-Druckworker in Tests aus (deterministisch)
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

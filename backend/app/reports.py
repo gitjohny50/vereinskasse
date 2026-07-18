@@ -185,6 +185,6 @@ def druck_bericht(session: Session, abschluss_id: int, printer=None) -> dict:
     daten = abschluss_bericht(session, abschluss)
     cfg = hw.load_hw_settings(session)
     payload = hw.build_bericht_bytes(cfg, daten, profil.name if profil else "")
-    job = print_queue.enqueue(session, dokumenttyp="Kassenabschluss", payload=payload)
+    job = print_queue.enqueue(session, dokumenttyp="Kassenabschluss", payload=payload, bezeichnung=abschluss.nummer)
     ok = print_queue._versuch(session, job, print_queue._printer(session, printer))
     return {"ok": ok, "detail": job.letzte_fehlermeldung, "auftrag_id": job.id, "drucker": job.drucker}

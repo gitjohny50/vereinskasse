@@ -44,10 +44,10 @@ def _printer(session: Session, injected: PrinterAdapter | None) -> PrinterAdapte
 
 def enqueue(
     session: Session, *, dokumenttyp: str, payload: bytes, verkauf_id: int | None = None,
-    nachdruck: bool = False, max_versuche: int = 3, drucker: str = "",
+    nachdruck: bool = False, max_versuche: int = 3, drucker: str = "", bezeichnung: str = "",
 ) -> models.Druckauftrag:
     auftrag = models.Druckauftrag(
-        dokumenttyp=dokumenttyp, drucker=drucker, status=OFFEN, versuche=0,
+        dokumenttyp=dokumenttyp, bezeichnung=bezeichnung, drucker=drucker, status=OFFEN, versuche=0,
         max_versuche=max_versuche, nachdruck=nachdruck, verkauf_id=verkauf_id,
         payload_b64=base64.b64encode(payload).decode("ascii"),
     )
@@ -177,17 +177,23 @@ def druck_verkauf(session: Session, verkauf_id: int, schublade: bool, printer: P
 
     if auto_beleg:
         bon_bytes = _verkauf_bon_bytes(session, cfg, verkauf, schublade=schublade, kopie=False)
-        jobs.append(enqueue(session, dokumenttyp="Bon", payload=bon_bytes, verkauf_id=verkauf.id))
+        jobs.append(enqueue(session, dokumenttyp="Bon", payload=bon_bytes, verkauf_id=verkauf.id,
+                            bezeichnung=f"Beleg {verkauf.belegnummer}"))
 
+    # Jedes Artikelticket als EIGENEN Auftrag: so erscheint jeder Artikel einzeln
+    # im Druckprotokoll und lässt sich einzeln wiederholen; ein hängendes Ticket
+    # blockiert die übrigen nicht mehr.
     tickets = hw._ticket_liste(positionen)
-    ticket_bytes = hw.build_tickets_bytes(cfg, tickets, verkauf.belegnummer)
-    if ticket_bytes is not None:
-        jobs.append(enqueue(session, dokumenttyp="Artikelticket", payload=ticket_bytes, verkauf_id=verkauf.id))
+    for bez in tickets:
+        payload = hw.build_ticket_bytes(cfg, bez, verkauf.belegnummer)
+        jobs.append(enqueue(session, dokumenttyp="Artikelticket", payload=payload,
+                            verkauf_id=verkauf.id, bezeichnung=bez))
 
     # Schublade nur separat öffnen, wenn kein Bon gedruckt wird (der Bon enthält
     # den Kick bereits) und die Zahlungsart die Schublade vorsieht.
     if schublade and not auto_beleg and cfg.get("schublade.aktiv", "1") == "1":
-        jobs.append(enqueue(session, dokumenttyp="Schublade", payload=hw.build_drawer_pulse(cfg), verkauf_id=verkauf.id))
+        jobs.append(enqueue(session, dokumenttyp="Schublade", payload=hw.build_drawer_pulse(cfg),
+                            verkauf_id=verkauf.id, bezeichnung="Kassenschublade"))
 
     p = _printer(session, printer)
     ok = True
@@ -203,7 +209,7 @@ def druck_beleg(session: Session, verkauf_id: int, benutzer: str, printer: Print
     cfg = hw.load_hw_settings(session)
     verkauf = session.get(models.Verkauf, verkauf_id)
     bon_bytes = _verkauf_bon_bytes(session, cfg, verkauf, schublade=False, kopie=False)
-    job = enqueue(session, dokumenttyp="Beleg", payload=bon_bytes, verkauf_id=verkauf.id)
+    job = enqueue(session, dokumenttyp="Beleg", payload=bon_bytes, verkauf_id=verkauf.id, bezeichnung=f"Beleg {verkauf.belegnummer}")
     session.add(models.AuditLog(benutzer=benutzer, aktion="verkauf.beleg", datensatz=verkauf.belegnummer))
     session.commit()
     ok = _versuch(session, job, _printer(session, printer))
@@ -215,7 +221,7 @@ def druck_nachdruck(session: Session, verkauf_id: int, benutzer: str, printer: P
     cfg = hw.load_hw_settings(session)
     verkauf = session.get(models.Verkauf, verkauf_id)
     bon_bytes = _verkauf_bon_bytes(session, cfg, verkauf, schublade=False, kopie=True)
-    job = enqueue(session, dokumenttyp="Bon-Nachdruck", payload=bon_bytes, verkauf_id=verkauf.id, nachdruck=True)
+    job = enqueue(session, dokumenttyp="Bon-Nachdruck", payload=bon_bytes, verkauf_id=verkauf.id, nachdruck=True, bezeichnung=f"Kopie {verkauf.belegnummer}")
     session.add(models.AuditLog(benutzer=benutzer, aktion="verkauf.nachdruck", datensatz=verkauf.belegnummer))
     session.commit()
     ok = _versuch(session, job, _printer(session, printer))

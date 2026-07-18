@@ -67,7 +67,7 @@ export interface Verkauf {
   status: string; positionen: BerechnungPosition[]; zahlung: ZahlungInfo | null;
 }
 export interface Druckauftrag {
-  id: number; dokumenttyp: string; drucker: string; status: string; versuche: number; max_versuche: number;
+  id: number; dokumenttyp: string; bezeichnung: string; drucker: string; status: string; versuche: number; max_versuche: number;
   letzte_fehlermeldung: string; nachdruck: boolean; verkauf_id: number | null; erstellt_am: string; aktualisiert_am: string;
 }
 export interface QueueStatus { offen: number; fehlgeschlagen: number; erfolgreich: number; abgebrochen: number; }

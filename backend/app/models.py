@@ -72,6 +72,8 @@ class Druckauftrag(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     dokumenttyp: Mapped[str] = mapped_column(String(60), nullable=False)
+    # Klartext-Bezeichnung für das Druckprotokoll (z. B. der Artikelname des Tickets).
+    bezeichnung: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     erstellt_am: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     drucker: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="offen")

@@ -42,8 +42,11 @@ def test_verkauf_druckt_tickets_ohne_beleg(client):
     client.post("/api/verkauf", json={
         "kassenprofil_id": pid, "artikel": [{"artikel_id": arts["Cola"]["id"], "menge": 1}],
         "zahlungsmethode_id": zm["Bar"]["id"], "gegeben_cent": 1000})
-    typen = {j["dokumenttyp"] for j in client.get("/api/druckwarteschlange").json()}
-    assert "Artikelticket" in typen
+    jobs = client.get("/api/druckwarteschlange").json()
+    typen = {j["dokumenttyp"] for j in jobs}
+    # je Artikel ein eigener Ticket-Auftrag, mit Artikelname in der Bezeichnung
+    tickets = [j for j in jobs if j["dokumenttyp"] == "Artikelticket"]
+    assert len(tickets) == 1 and tickets[0]["bezeichnung"] == "Cola"
     assert "Bon" not in typen
     assert "Schublade" in typen
     st = client.get("/api/druckwarteschlange/status").json()
@@ -58,8 +61,19 @@ def test_beleg_autodruck_an_druckt_bon(client):
         "kassenprofil_id": pid, "artikel": [{"artikel_id": arts["Cola"]["id"], "menge": 1}],
         "zahlungsmethode_id": zm["Bar"]["id"], "gegeben_cent": 1000})
     typen = {j["dokumenttyp"] for j in client.get("/api/druckwarteschlange").json()}
-    assert {"Bon", "Artikelticket"} <= typen
+    assert "Bon" in typen and "Artikelticket" in typen
     assert "Schublade" not in typen
+
+
+def test_jedes_stueck_eigenes_ticket(client):
+    """2x Cola -> zwei getrennte Ticket-Aufträge (einzeln protokolliert/wiederholbar)."""
+    pid, arts, zm = _kasse(client)
+    client.post("/api/verkauf", json={
+        "kassenprofil_id": pid, "artikel": [{"artikel_id": arts["Cola"]["id"], "menge": 2}],
+        "zahlungsmethode_id": zm["Karte"]["id"]})
+    tickets = [j for j in client.get("/api/druckwarteschlange").json() if j["dokumenttyp"] == "Artikelticket"]
+    assert len(tickets) == 2
+    assert all(t["bezeichnung"] == "Cola" for t in tickets)
 
 
 def test_beleg_auf_knopfdruck(client):

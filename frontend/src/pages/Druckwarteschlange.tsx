@@ -98,6 +98,7 @@ export function Druckwarteschlange({ canAdmin }: { canAdmin: boolean }) {
               <tr key={j.id}>
                 <td>
                   <strong>{j.dokumenttyp}{j.nachdruck ? " (Kopie)" : ""}</strong>
+                  {j.bezeichnung && <span style={{ marginLeft: 8 }}>· {j.bezeichnung}</span>}
                   {j.verkauf_id && <span style={{ color: "var(--muted)", marginLeft: 8 }}>zu Verkauf #{j.verkauf_id}</span>}
                   {j.letzte_fehlermeldung && <div style={{ color: "var(--danger, #b3261e)", fontSize: 12, marginTop: 2 }}>{j.letzte_fehlermeldung}</div>}
                 </td>

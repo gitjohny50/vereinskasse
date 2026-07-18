@@ -237,15 +237,27 @@ def _ticket_liste(positionen: list[dict]) -> list[str]:
 def build_tickets_bytes(cfg: dict[str, str], tickets: list[str], belegnummer: str) -> bytes | None:
     if not tickets:
         return None
-    mode = cfg.get("schnitt.modus", "partial")
-    feed = int(cfg.get("schnitt.vorschub_zeilen", "3"))
     b = _builder(cfg)
     b.init()
     for bez in tickets:
-        b.align("center").bold(True).size(2, 2).line(bez)
-        b.size(1, 1).bold(False).line(f"Beleg {belegnummer}")
-        b.cut(mode=mode, feed_lines=feed)
+        _ticket_block(b, cfg, bez, belegnummer)
     return b.build()
+
+
+def build_ticket_bytes(cfg: dict[str, str], bezeichnung: str, belegnummer: str) -> bytes:
+    """Ein einzelnes Artikelticket (für getrennte Druckaufträge je Artikel)."""
+    b = _builder(cfg)
+    b.init()
+    _ticket_block(b, cfg, bezeichnung, belegnummer)
+    return b.build()
+
+
+def _ticket_block(b, cfg: dict[str, str], bezeichnung: str, belegnummer: str) -> None:
+    mode = cfg.get("schnitt.modus", "partial")
+    feed = int(cfg.get("schnitt.vorschub_zeilen", "3"))
+    b.align("center").bold(True).size(2, 2).line(bezeichnung)
+    b.size(1, 1).bold(False).line(f"Beleg {belegnummer}")
+    b.cut(mode=mode, feed_lines=feed)
 
 
 def _pos_dicts(verkauf: Verkauf) -> list[dict]:

@@ -375,6 +375,7 @@ class VerkaufOut(BaseModel):
 class DruckauftragOut(BaseModel):
     id: int
     dokumenttyp: str
+    bezeichnung: str = ""
     drucker: str
     status: str
     versuche: int
