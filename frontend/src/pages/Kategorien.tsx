@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { api, ApiError, type Kassenprofil, type Kategorie } from "../api";
 
 export function Kategorien({ profil }: { profil: Kassenprofil }) {
@@ -9,13 +9,14 @@ export function Kategorien({ profil }: { profil: Kassenprofil }) {
   const [reihenfolge, setReihenfolge] = useState(0);
   const [editId, setEditId] = useState<number | null>(null);
 
-  async function laden() {
+  const laden = useCallback(async () => {
     setListe(await api.kategorien(profil.id));
-  }
+  }, [profil.id]);
+
   useEffect(() => {
     setFehler(null);
     laden().catch((e) => setFehler(e instanceof ApiError ? e.message : "Fehler beim Laden."));
-  }, [profil.id]);
+  }, [laden]);
 
   async function anlegen() {
     if (!name.trim()) { setFehler("Name fehlt."); return; }
@@ -36,6 +37,7 @@ export function Kategorien({ profil }: { profil: Kassenprofil }) {
       await laden();
     } catch (e) { setFehler(e instanceof ApiError ? e.message : "Speichern fehlgeschlagen."); }
   }
+
   async function aktivUmschalten(k: Kategorie) {
     try {
       await api.kategorieAendern(k.id, {
@@ -45,6 +47,7 @@ export function Kategorien({ profil }: { profil: Kassenprofil }) {
       await laden();
     } catch (e) { setFehler(e instanceof ApiError ? e.message : "Speichern fehlgeschlagen."); }
   }
+
   async function loeschen(k: Kategorie) {
     if (!window.confirm(`Kategorie "${k.name}" löschen? Das geht nur nach einem Z-Abschluss. Zugeordnete Artikel bleiben erhalten und sind danach ohne Kategorie.`)) return;
     try {
@@ -53,6 +56,7 @@ export function Kategorien({ profil }: { profil: Kassenprofil }) {
       await laden();
     } catch (e) { setFehler(e instanceof ApiError ? e.message : "Löschen fehlgeschlagen."); }
   }
+
   function feld(id: number, patch: Partial<Kategorie>) {
     setListe((xs) => xs.map((x) => (x.id === id ? { ...x, ...patch } : x)));
   }

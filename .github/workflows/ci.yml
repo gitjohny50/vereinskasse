@@ -1,0 +1,119 @@
+# .github/workflows/ci.yml
+
+name: CI Pipeline
+
+# Die Pipeline wird bei jedem Push und Merge auf die Branches 'main' und 'dev'
+# sowie bei jedem Pull Request, der auf diese Branches zielt, automatisch gestartet.
+on:
+  push:
+    branches: [ main, dev, cicd-pipeline ]
+  pull_request:
+    branches: [ main, dev, cicd-pipeline ]
+
+jobs:
+  ###################
+  #   BACKEND JOB   #
+  ###################
+  backend-ci:
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      # 1. Code aus dem Repository auschecken
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      # 2. Python-Version festlegen
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12' # Passe die Version bei Bedarf an
+
+      # 3. Python-Abhängigkeiten installieren (inkl. Test-Tools)
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov ruff
+
+      # 4. Code-Stil mit Ruff prüfen (Linter)
+      - name: Lint with ruff
+        run: ruff check app/ tests/
+
+      # 5. Tests mit Pytest ausführen und Coverage-Bericht erstellen
+      - name: Run tests and generate coverage report
+        run: pytest --cov=app --cov-report=xml
+
+      # 6. Coverage-Bericht zu Codecov.io hochladen
+      #    (Benötigt ein CODECOV_TOKEN in den GitHub Secrets)
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./backend/coverage.xml # Pfad zur Coverage-Datei
+          fail_ci_if_error: true
+
+      # 7. Security Lab: SBOM generieren
+      - name: Generate SBOM (Syft)
+        uses: anchore/sbom-action@v0
+        with:
+          format: cyclonedx-json
+          output-file: ${{ runner.temp }}/backend-sbom.json
+
+      # 8. Security Lab: SBOM scannen
+      - name: Scan SBOM (OSV Scanner)
+        uses: google/osv-scanner-action@v1
+        with:
+          sbom: ${{ runner.temp }}/backend-sbom.json
+
+  ####################
+  #   FRONTEND JOB   #
+  ####################
+  frontend-ci:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./frontend
+
+    steps:
+      # 1. Code auschecken
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      # 2. Node.js-Version festlegen
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Passe die Version bei Bedarf an
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      # 3. Frontend-Abhängigkeiten installieren
+      #    'npm ci' ist schneller und sicherer für CI als 'npm install'
+      - name: Install dependencies
+        run: npm ci
+
+      # 4. Code-Stil mit ESLint prüfen
+      #    (Setzt voraus, dass ein 'lint'-Skript in package.json existiert)
+      - name: Lint with ESLint
+        run: npm run lint
+
+      # 5. Frontend-Build ausführen, um Fehler zu finden
+      - name: Build project
+        run: npm run build
+
+      # 6. Security Lab: SBOM generieren
+      - name: Generate SBOM (Syft)
+        uses: anchore/sbom-action@v0
+        with:
+          format: cyclonedx-json
+          output-file: ${{ runner.temp }}/frontend-sbom.json
+
+      # 7. Security Lab: SBOM scannen
+      - name: Scan SBOM (OSV Scanner)
+        uses: google/osv-scanner-action@v1
+        with:
+          sbom: ${{ runner.temp }}/frontend-sbom.json

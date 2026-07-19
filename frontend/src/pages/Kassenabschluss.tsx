@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   api, ApiError, euroToCents, formatCents,
   type AbschlussArtikelResetResult, type AbschlussResetOptions, type Bericht, type KassenabschlussKopf as Kopf, type Kassenprofil,
@@ -28,14 +28,15 @@ export function Kassenabschluss({ profil }: { profil: Kassenprofil }) {
   const [resetResult, setResetResult] = useState<AbschlussArtikelResetResult | null>(null);
   const [resetOptions, setResetOptions] = useState<AbschlussResetOptions>(DEFAULT_RESET_OPTIONS);
 
-  async function laden() {
+  const laden = useCallback(async () => {
     const [xb, l] = await Promise.all([api.xBericht(profil.id), api.abschluesse(profil.id)]);
     setX(xb); setListe(l);
-  }
+  }, [profil.id]);
+
   useEffect(() => {
     setFehler(null); setErfolg(null); setDetail(null); setConfirm(false);
     laden().catch((e) => setFehler(e instanceof ApiError ? e.message : "Fehler beim Laden."));
-  }, [profil.id]);
+  }, [laden]);
 
   const anfangCent = euroToCents(anfang) ?? 0;
   const gezaehltCent = gezaehlt.trim() === "" ? null : euroToCents(gezaehlt);
