@@ -9,12 +9,15 @@ Alle Beträge sind ganzzahlige Cent.
 """
 from __future__ import annotations
 
+import csv
+import io
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
 from . import models
 from . import print_queue
+from .timeutils import to_local
 
 
 def _now() -> datetime:
@@ -174,6 +177,115 @@ def abschluss_bericht(session: Session, abschluss: models.Kassenabschluss) -> di
         ],
         "artikel": sorted(artikel.values(), key=lambda x: -x["betrag_cent"]),
     }
+
+
+CSV_SPALTEN = [
+    "abschluss_nummer",
+    "abschluss_datum",
+    "abschluss_uhrzeit",
+    "belegnummer",
+    "verkauf_datum",
+    "verkauf_uhrzeit",
+    "verkauf_stunde",
+    "wochentag",
+    "position_typ",
+    "artikel",
+    "menge",
+    "einzelpreis_eur",
+    "umsatz_eur",
+    "zahlungsart",
+    "gegeben_eur",
+    "rueckgeld_eur",
+]
+
+
+def _local(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    return to_local(dt)
+
+
+def _datum(dt: datetime | None) -> str:
+    local = _local(dt)
+    return local.strftime("%Y-%m-%d") if local else ""
+
+
+def _uhrzeit(dt: datetime | None) -> str:
+    local = _local(dt)
+    return local.strftime("%H:%M:%S") if local else ""
+
+
+def _stunde(dt: datetime | None) -> str:
+    local = _local(dt)
+    return local.strftime("%H:00") if local else ""
+
+
+def _wochentag(dt: datetime | None) -> str:
+    local = _local(dt)
+    return ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"][local.weekday()] if local else ""
+
+
+def _eur(cent: int | None) -> str:
+    if cent is None:
+        return ""
+    vorzeichen = "-" if cent < 0 else ""
+    abs_cent = abs(cent)
+    return f"{vorzeichen}{abs_cent // 100},{abs_cent % 100:02d}"
+
+
+def _position_typ(typ: str) -> str:
+    return {
+        "artikel": "Artikel",
+        "pfand": "Pfand",
+        "pfand_rueckgabe": "Pfand Rueckgabe",
+    }.get(typ, typ)
+
+
+def abschluss_detail_csv(session: Session, abschluss: models.Kassenabschluss) -> str:
+    """Erstellt einen digitalen Detailabschluss als CSV.
+
+    Jede Verkaufsposition wird als eigene Zeile exportiert. Dadurch lassen sich
+    Artikel später nach Uhrzeit, Beleg, Zahlungsart oder Pfandposition sauber
+    auswerten, während der gedruckte Z-Abschluss unverändert bleibt.
+    """
+    verkaeufe = (
+        session.query(models.Verkauf)
+        .filter(models.Verkauf.abschluss_id == abschluss.id)
+        .order_by(models.Verkauf.zeitpunkt, models.Verkauf.id)
+        .all()
+    )
+
+    output = io.StringIO()
+    output.write("\ufeff")
+    writer = csv.DictWriter(output, fieldnames=CSV_SPALTEN, delimiter=";", lineterminator="\n")
+    writer.writeheader()
+
+    for verkauf in verkaeufe:
+        zahlung = verkauf.zahlungen[0] if verkauf.zahlungen else None
+        basis = {
+            "abschluss_nummer": abschluss.nummer,
+            "abschluss_datum": _datum(abschluss.bis_zeitpunkt),
+            "abschluss_uhrzeit": _uhrzeit(abschluss.bis_zeitpunkt),
+            "belegnummer": verkauf.belegnummer,
+            "verkauf_datum": _datum(verkauf.zeitpunkt),
+            "verkauf_uhrzeit": _uhrzeit(verkauf.zeitpunkt),
+            "verkauf_stunde": _stunde(verkauf.zeitpunkt),
+            "wochentag": _wochentag(verkauf.zeitpunkt),
+            "zahlungsart": zahlung.bezeichnung if zahlung else "",
+            "gegeben_eur": _eur(zahlung.gegeben_cent) if zahlung else "",
+            "rueckgeld_eur": _eur(zahlung.rueckgeld_cent) if zahlung else "",
+        }
+        for position in verkauf.positionen:
+            writer.writerow({
+                **basis,
+                "position_typ": _position_typ(position.typ),
+                "artikel": position.bezeichnung,
+                "menge": position.menge,
+                "einzelpreis_eur": _eur(position.einzelpreis_cent),
+                "umsatz_eur": _eur(position.gesamt_cent),
+            })
+
+    return output.getvalue()
 
 
 def druck_bericht(session: Session, abschluss_id: int, printer=None) -> dict:

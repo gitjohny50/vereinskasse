@@ -98,6 +98,22 @@ def test_event_ohne_pfand(client):
     assert b["gesamt_cent"] == 250
 
 
+def test_profil_ohne_pfand(client):
+    pid, arts, _, _ = _ctx(client)
+    profil = client.get("/api/kassenprofile").json()[0]
+    client.put(f"/api/kassenprofile/{pid}", json={
+        "name": profil["name"], "verein_id": profil["verein_id"], "bonkopf": profil.get("bonkopf") or "",
+        "bonfuss": profil.get("bonfuss") or "", "waehrung": profil["waehrung"], "pfand_aktiv": False,
+    })
+    r = client.post("/api/verkauf/berechnung", json={
+        "kassenprofil_id": pid,
+        "artikel": [{"artikel_id": arts["Cola"]["id"], "menge": 1}],
+    })
+    b = r.json()
+    assert b["pfand_cent"] == 0
+    assert b["gesamt_cent"] == 250
+
+
 def test_verkauf_ist_unveraenderlich(client):
     pid, arts, _, zm = _ctx(client)
     v = client.post("/api/verkauf", json={

@@ -32,6 +32,32 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function download(path: string, fallbackName: string): Promise<void> {
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(`/api${path}`, { headers });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    let detail = text;
+    try { detail = JSON.parse(text).detail ?? text; } catch { /* keep text */ }
+    throw new ApiError(res.status, typeof detail === "string" ? detail : JSON.stringify(detail));
+  }
+
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = disposition.match(/filename="?([^";]+)"?/i);
+  const filename = match?.[1] ?? fallbackName;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 // -- Typen --------------------------------------------------------------
 export interface Health { status: string; version: string; db_integrity: string; }
 export interface PrinterStatus { reachable: boolean; known: boolean; paper_ok: boolean | null; cover_closed: boolean | null; detail: string; }
@@ -39,13 +65,14 @@ export interface ActionResult { ok: boolean; detail: string; auftrag_id: number 
 export interface UsbGeraet { vendor_id: string; product_id: string; hersteller: string; produkt: string; beschreibung: string; }
 export interface UsbListe { pyusb_installiert: boolean; geraete: UsbGeraet[]; hinweis: string; }
 export interface Setting { schluessel: string; wert: string; beschreibung: string; }
+export interface BonLogoInfo { aktiv: boolean; breite_px: number; hoehe_px: number; bytes: number; }
 export interface LoginUser { id: number; name: string; }
 export interface Session { token: string; benutzer_id: number; name: string; rolle: string; stufe: number; }
 
 export interface Rolle { id: number; name: string; stufe: number; beschreibung: string; }
 export interface Benutzer { id: number; name: string; rolle_id: number; rolle: string; stufe: number; aktiv: boolean; }
 export interface Verein { id: number; name: string; anschrift: string; kontakt: string; aktiv: boolean; }
-export interface Kassenprofil { id: number; name: string; verein_id: number; bonkopf?: string; bonfuss?: string; waehrung: string; aktiv: boolean; }
+export interface Kassenprofil { id: number; name: string; verein_id: number; bonkopf?: string; bonfuss?: string; waehrung: string; aktiv: boolean; pfand_aktiv: boolean; }
 export interface Veranstaltung { id: number; kassenprofil_id: number; name: string; beschreibung: string; ort: string; pfand_aktiv: boolean; status: string; }
 export interface Kategorie { id: number; kassenprofil_id: number; name: string; farbe: string; symbol: string; sortierung: number; aktiv: boolean; }
 export interface Pfandart { id: number; kassenprofil_id: number; name: string; kurzname: string; betrag_cent: number; farbe: string; symbol: string; aktiv: boolean; rueckgabe_erlaubt: boolean; artikelticket_drucken: boolean; steuersatz: number; sortierung: number; max_rueckgabe_menge: number | null; }
@@ -57,6 +84,19 @@ export interface Artikel {
   artikelticket_modus: string; steuersatz: number; artikelnummer: string; barcode: string;
   ausgabeort: string; pfandzuordnungen: PfandZuordnung[];
 }
+export interface ArtikelCsvImportResult {
+  angelegt: number; aktualisiert: number; kategorien_angelegt: number; pfandarten_angelegt: number; fehler: string[];
+}
+export interface ArtikelBulkActionResult { anzahl: number; }
+export interface AbschlussArtikelResetResult {
+  artikel_geloescht: number; pfandzuordnungen_geloescht: number;
+  belege_geloescht: number; verkaufspositionen_geloescht: number; zahlungen_geloescht: number;
+  abschluesse_geloescht: number; druckauftraege_geloescht: number; belegkreis_zurueckgesetzt: boolean;
+}
+export interface AbschlussResetOptions {
+  belege_loeschen: boolean; abschluesse_loeschen: boolean; artikel_loeschen: boolean;
+  pfandzuordnungen_loeschen: boolean; druckwarteschlange_loeschen: boolean; belegkreis_zuruecksetzen: boolean;
+}
 
 export interface BerechnungPosition { typ: string; bezeichnung: string; einzelpreis_cent: number; menge: number; gesamt_cent: number; artikelticket_modus: string; steuersatz: number; }
 export interface Berechnung { positionen: BerechnungPosition[]; waren_cent: number; pfand_cent: number; gesamt_cent: number; }
@@ -65,6 +105,18 @@ export interface Verkauf {
   id: number; belegnummer: string; kassenprofil_id: number; veranstaltung_id: number | null;
   benutzer_id: number; zeitpunkt: string; waren_cent: number; pfand_cent: number; gesamt_cent: number;
   status: string; positionen: BerechnungPosition[]; zahlung: ZahlungInfo | null;
+}
+export interface AuswertungItem { bezeichnung: string; menge: number; umsatz_cent: number; }
+export interface AuswertungBucket {
+  start: string; label: string; anzahl: number; gesamt_cent: number; items: AuswertungItem[];
+}
+export interface AuswertungVerkauf {
+  id: number; belegnummer: string; zeitpunkt: string; gesamt_cent: number; zahlung: string; items: AuswertungItem[];
+}
+export interface VerkaufsAuswertung {
+  kassenprofil_id: number; von: string; bis: string; bucket_modus: string;
+  anzahl_verkaeufe: number; gesamt_cent: number;
+  top_artikel: AuswertungItem[]; buckets: AuswertungBucket[]; verkaeufe: AuswertungVerkauf[];
 }
 export interface Druckauftrag {
   id: number; dokumenttyp: string; bezeichnung: string; drucker: string; status: string; versuche: number; max_versuche: number;
@@ -107,6 +159,10 @@ export const api = {
   openDrawer: (grund: string) => req<ActionResult>("/diagnose/schublade/oeffnen", { method: "POST", body: j({ grund }) }),
   settings: () => req<Setting[]>("/einstellungen"),
   updateSetting: (schluessel: string, wert: string) => req<Setting>(`/einstellungen/${schluessel}`, { method: "PUT", body: j({ wert }) }),
+  bonLogo: () => req<BonLogoInfo>("/einstellungen/bon-logo/status"),
+  uploadBonLogo: (raster_b64: string, breite_px: number, hoehe_px: number) =>
+    req<BonLogoInfo>("/einstellungen/bon-logo/datei", { method: "PUT", body: j({ raster_b64, breite_px, hoehe_px }) }),
+  deleteBonLogo: () => req<BonLogoInfo>("/einstellungen/bon-logo/datei", { method: "DELETE" }),
 
   // Benutzer & Rollen
   rollen: () => req<Rolle[]>("/rollen"),
@@ -117,8 +173,11 @@ export const api = {
   // Vereine & Profile & Veranstaltungen
   vereine: () => req<Verein[]>("/vereine"),
   vereinAnlegen: (b: Body) => req<Verein>("/vereine", { method: "POST", body: j(b) }),
-  profile: () => req<Kassenprofil[]>("/kassenprofile"),
+  vereinAendern: (id: number, b: Body) => req<Verein>(`/vereine/${id}`, { method: "PUT", body: j(b) }),
+  profile: (mitInaktiv = false) => req<Kassenprofil[]>(`/kassenprofile${mitInaktiv ? "?mit_inaktiv=true" : ""}`),
   profilAnlegen: (b: Body) => req<Kassenprofil>("/kassenprofile", { method: "POST", body: j(b) }),
+  profilAendern: (id: number, b: Body) => req<Kassenprofil>(`/kassenprofile/${id}`, { method: "PUT", body: j(b) }),
+  profilLoeschen: (id: number) => req<Kassenprofil>(`/kassenprofile/${id}`, { method: "DELETE" }),
   veranstaltungen: (pid?: number) => req<Veranstaltung[]>(`/veranstaltungen${pid ? `?kassenprofil_id=${pid}` : ""}`),
   veranstaltungAnlegen: (b: Body) => req<Veranstaltung>("/veranstaltungen", { method: "POST", body: j(b) }),
   veranstaltungStatus: (id: number, status: string) => req<Veranstaltung>(`/veranstaltungen/${id}/status?status=${encodeURIComponent(status)}`, { method: "PUT" }),
@@ -127,6 +186,7 @@ export const api = {
   kategorien: (pid: number) => req<Kategorie[]>(`/kategorien?kassenprofil_id=${pid}`),
   kategorieAnlegen: (b: Body) => req<Kategorie>("/kategorien", { method: "POST", body: j(b) }),
   kategorieAendern: (id: number, b: Body) => req<Kategorie>(`/kategorien/${id}`, { method: "PUT", body: j(b) }),
+  kategorieLoeschen: (id: number) => req<Kategorie>(`/kategorien/${id}`, { method: "DELETE" }),
 
   // Pfandarten
   pfandarten: (pid: number) => req<Pfandart[]>(`/pfandarten?kassenprofil_id=${pid}`),
@@ -141,8 +201,12 @@ export const api = {
   // Artikel
   artikel: (pid: number, mitArchiviert = false) => req<Artikel[]>(`/artikel?kassenprofil_id=${pid}&mit_archiviert=${mitArchiviert}`),
   artikelAnlegen: (b: Body) => req<Artikel>("/artikel", { method: "POST", body: j(b) }),
+  artikelCsvImport: (kassenprofil_id: number, csv_text: string, delimiter: string) =>
+    req<ArtikelCsvImportResult>("/artikel/csv-import", { method: "POST", body: j({ kassenprofil_id, csv_text, delimiter, fehlende_stammdaten_anlegen: true }) }),
   artikelAendern: (id: number, b: Body) => req<Artikel>(`/artikel/${id}`, { method: "PUT", body: j(b) }),
   artikelArchivieren: (id: number) => req<Artikel>(`/artikel/${id}`, { method: "DELETE" }),
+  artikelAlleArchivieren: (pid: number) => req<ArtikelBulkActionResult>(`/artikel/alle-archivieren?kassenprofil_id=${pid}`, { method: "POST" }),
+  artikelPfandZuruecksetzen: (pid: number) => req<ArtikelBulkActionResult>(`/artikel/pfand-zuruecksetzen?kassenprofil_id=${pid}`, { method: "POST" }),
   artikelKopieren: (id: number) => req<Artikel>(`/artikel/${id}/kopieren`, { method: "POST" }),
 
   // Verkauf
@@ -152,6 +216,8 @@ export const api = {
   verkaufDetail: (id: number) => req<Verkauf>(`/verkauf/${id}`),
   nachdruck: (id: number) => req<ActionResult>(`/verkauf/${id}/nachdruck`, { method: "POST" }),
   belegDrucken: (id: number) => req<ActionResult>(`/verkauf/${id}/beleg`, { method: "POST" }),
+  verkaufsAuswertung: (pid: number, tage: number, pfand = false) =>
+    req<VerkaufsAuswertung>(`/auswertung/verkauf?kassenprofil_id=${pid}&tage=${tage}&pfand=${pfand}`),
 
   // Druckwarteschlange
   druckauftraege: (status?: string) => req<Druckauftrag[]>(`/druckwarteschlange${status ? `?status=${encodeURIComponent(status)}` : ""}`),
@@ -165,7 +231,10 @@ export const api = {
     req<Bericht>(`/abschluss/x?kassenprofil_id=${pid}&anfangsbestand_cent=${anfangsbestand_cent}${gezaehlt_cent != null ? `&gezaehlt_cent=${gezaehlt_cent}` : ""}`),
   zAbschluss: (b: Body) => req<Bericht>("/abschluss/z", { method: "POST", body: j(b) }),
   abschluesse: (pid: number) => req<KassenabschlussKopf[]>(`/abschluss?kassenprofil_id=${pid}`),
+  abschlussArtikeldatenZuruecksetzen: (pid: number, bestaetigung: string, optionen: AbschlussResetOptions) =>
+    req<AbschlussArtikelResetResult>(`/abschluss/daten-zuruecksetzen?kassenprofil_id=${pid}`, { method: "POST", body: j({ bestaetigung, ...optionen }) }),
   abschlussDetail: (id: number) => req<Bericht>(`/abschluss/${id}`),
+  abschlussCsv: (id: number) => download(`/abschluss/${id}/csv`, `abschluss-${id}-detail.csv`),
   abschlussNachdruck: (id: number) => req<ActionResult>(`/abschluss/${id}/nachdruck`, { method: "POST" }),
 };
 

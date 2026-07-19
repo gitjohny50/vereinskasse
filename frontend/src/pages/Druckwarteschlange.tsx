@@ -4,7 +4,7 @@ import { api, ApiError, type Druckauftrag, type QueueStatus } from "../api";
 const STATUS_STIL: Record<string, { text: string; farbe: string }> = {
   offen: { text: "offen", farbe: "var(--warn, #b45309)" },
   fehlgeschlagen: { text: "fehlgeschlagen", farbe: "var(--danger, #b3261e)" },
-  erfolgreich: { text: "erfolgreich", farbe: "var(--ok, #0e7c6b)" },
+  erfolgreich: { text: "erfolgreich", farbe: "var(--ok, #2563eb)" },
   abgebrochen: { text: "abgebrochen", farbe: "var(--muted, #566664)" },
 };
 
@@ -78,7 +78,7 @@ export function Druckwarteschlange({ canAdmin }: { canAdmin: boolean }) {
         <div className="row" style={{ gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
           <Kennzahl label="Offen" wert={status.offen} farbe="var(--warn, #b45309)" />
           <Kennzahl label="Fehlgeschlagen" wert={status.fehlgeschlagen} farbe="var(--danger, #b3261e)" />
-          <Kennzahl label="Erfolgreich" wert={status.erfolgreich} farbe="var(--ok, #0e7c6b)" />
+          <Kennzahl label="Erfolgreich" wert={status.erfolgreich} farbe="var(--ok, #2563eb)" />
           <Kennzahl label="Abgebrochen" wert={status.abgebrochen} farbe="var(--muted, #566664)" />
         </div>
       )}

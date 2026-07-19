@@ -96,6 +96,27 @@ class EscposBuilder:
         self._buffer += bytes([GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30])
         return self
 
+    # -- Rasterbild -----------------------------------------------------
+    def raster_image(self, width_px: int, height_px: int, data: bytes) -> "EscposBuilder":
+        """GS v 0 - monochromes Rasterbild drucken.
+
+        ``data`` enthält zeilenweise 1 Bit pro Pixel, MSB zuerst. Die Breite
+        muss durch 8 teilbar sein.
+        """
+        if width_px <= 0 or height_px <= 0 or width_px % 8 != 0:
+            raise ValueError("Rasterbild braucht positive Breite durch 8 und positive Hoehe")
+        width_bytes = width_px // 8
+        expected = width_bytes * height_px
+        if len(data) != expected:
+            raise ValueError(f"Rasterbild hat {len(data)} Bytes, erwartet {expected}")
+        self._buffer += bytes([
+            GS, 0x76, 0x30, 0x00,
+            width_bytes & 0xFF, (width_bytes >> 8) & 0xFF,
+            height_px & 0xFF, (height_px >> 8) & 0xFF,
+        ])
+        self._buffer += data
+        return self
+
     # -- Schnitt ---------------------------------------------------------
     def cut(self, mode: str = "partial", feed_lines: int = 3) -> "EscposBuilder":
         """Schneidebefehl (Lastenheft 14.6).

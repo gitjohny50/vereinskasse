@@ -26,7 +26,14 @@ def _now() -> datetime:
 
 
 def _pfand_aktiv(session: Session, kassenprofil_id: int, veranstaltung_id: int | None) -> bool:
-    """Pfand kann je Veranstaltung abgeschaltet sein (Lastenheft 7.2)."""
+    """Pfand kann global je Kassenprofil abgeschaltet werden.
+
+    Die alte Veranstaltungsprüfung bleibt kompatibel erhalten, ist aber nicht
+    mehr der normale Bedienweg.
+    """
+    row = session.get(models.Systemeinstellung, f"kassenprofil.{kassenprofil_id}.pfand_aktiv")
+    if row is not None and row.wert == "0":
+        return False
     if veranstaltung_id is None:
         return True
     ev = session.get(models.Veranstaltung, veranstaltung_id)

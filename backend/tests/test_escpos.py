@@ -1,4 +1,8 @@
+import base64
+from datetime import datetime, timezone
+
 from app.hardware.escpos import EscposBuilder
+from app.hardware.service import build_receipt_bytes, build_test_page, build_ticket_bytes
 
 
 def test_init_contains_reset_and_codepage():
@@ -45,3 +49,57 @@ def test_qr_has_store_and_print_blocks():
     payload = EscposBuilder().qr("hallo").build()
     assert b"\x1d\x28\x6b" in payload            # GS ( k
     assert payload.endswith(bytes([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]))
+
+
+def test_ticket_feeds_after_large_article_line_before_receipt_number():
+    payload = build_ticket_bytes({}, "Wasser", "000030", kopf="Musikverein Leutenbach")
+    assert b"\x1d\x21\x11Wasser\x1b\x64\x01\x1b\x45\x00\x1d\x21\x00\x1b\x64\x01Beleg 000030" in payload
+
+
+def test_raster_image_uses_gs_v_0_command():
+    payload = EscposBuilder().raster_image(8, 1, b"\x80").build()
+    assert payload == b"\x1dv0\x00\x01\x00\x01\x00\x80"
+
+
+def test_receipt_prints_configured_logo_before_header():
+    payload = build_receipt_bytes(
+        {
+            "bon.logo.aktiv": "1",
+            "bon.logo.breite_px": "8",
+            "bon.logo.hoehe_px": "1",
+            "bon.logo.raster_b64": base64.b64encode(b"\x80").decode("ascii"),
+        },
+        bonkopf="Verein",
+        bonfuss="",
+        belegnummer="000001",
+        zeitpunkt=datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc),
+        bediener="Test",
+        positionen=[],
+        waren_cent=0,
+        pfand_cent=0,
+        gesamt_cent=0,
+        zahlung_name="Bar",
+        gegeben_cent=0,
+        rueckgeld_cent=0,
+        schublade=False,
+    )
+    logo_pos = payload.index(b"\x1dv0\x00\x01\x00\x01\x00\x80")
+    header_pos = payload.index("Verein".encode("cp858"))
+    assert logo_pos < header_pos
+
+
+def test_test_page_prints_configured_logo_and_qr():
+    payload = build_test_page({
+        "bon.logo.aktiv": "1",
+        "bon.logo.breite_px": "8",
+        "bon.logo.hoehe_px": "1",
+        "bon.logo.raster_b64": base64.b64encode(b"\x80").decode("ascii"),
+        "diagnose.testseite.qr_url": "https://example.test/kasse",
+    })
+    assert b"\x1dv0\x00\x01\x00\x01\x00\x80" in payload
+    assert b"https://example.test/kasse" in payload
+
+
+def test_test_page_omits_qr_when_url_empty():
+    payload = build_test_page({"diagnose.testseite.qr_url": ""})
+    assert b"\x1d\x28\x6b" not in payload

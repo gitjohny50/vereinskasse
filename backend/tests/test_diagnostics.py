@@ -53,6 +53,25 @@ def test_settings_roundtrip(client):
     assert r3.status_code == 404
 
 
+def test_bon_logo_roundtrip(client):
+    r = client.get("/api/einstellungen/bon-logo/status")
+    assert r.status_code == 200
+    assert r.json()["aktiv"] is False
+
+    r2 = client.put("/api/einstellungen/bon-logo/datei", json={
+        "breite_px": 8,
+        "hoehe_px": 1,
+        "raster_b64": "gA==",
+    })
+    assert r2.status_code == 200
+    assert r2.json()["aktiv"] is True
+    assert r2.json()["breite_px"] == 8
+
+    r3 = client.delete("/api/einstellungen/bon-logo/datei")
+    assert r3.status_code == 200
+    assert r3.json()["aktiv"] is False
+
+
 def test_usb_geraete_liste(client):
     """USB-Geräteliste für die Drucker-Einrichtung: liefert strukturierte Antwort,
     auch wenn pyusb/libusb in der Umgebung fehlt (dann leere Liste, kein Fehler)."""

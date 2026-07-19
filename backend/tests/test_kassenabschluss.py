@@ -81,7 +81,120 @@ def test_nachdruck(client):
     assert client.post(f"/api/abschluss/{z['abschluss_id']}/nachdruck").json()["ok"] is True
 
 
+def test_abschluss_csv_enthaelt_detailpositionen(client):
+    pid, arts, zm = _ctx(client)
+    _verkauf(client, pid, arts["Cola"]["id"], 2, zm["Bar"]["id"], gegeben=1000)
+    z = client.post("/api/abschluss/z", json={"kassenprofil_id": pid}).json()
+
+    res = client.get(f"/api/abschluss/{z['abschluss_id']}/csv")
+    assert res.status_code == 200
+    assert "text/csv" in res.headers["content-type"]
+    assert "abschluss-Z-0001-detail.csv" in res.headers["content-disposition"]
+
+    text = res.content.decode("utf-8-sig")
+    lines = text.splitlines()
+    assert lines[0] == (
+        "abschluss_nummer;abschluss_datum;abschluss_uhrzeit;belegnummer;verkauf_datum;verkauf_uhrzeit;"
+        "verkauf_stunde;wochentag;position_typ;artikel;menge;einzelpreis_eur;umsatz_eur;"
+        "zahlungsart;gegeben_eur;rueckgeld_eur"
+    )
+    assert ";Artikel;Cola;2;2,50;5,00;Bar;10,00;" in text
+    assert ";Cola;" in text
+
+
+def test_daten_reset_nur_nach_abschluss(client):
+    pid, arts, zm = _ctx(client)
+    _verkauf(client, pid, arts["Cola"]["id"], 1, zm["Bar"]["id"], gegeben=1000)
+
+    offen = client.post(
+        "/api/abschluss/daten-zuruecksetzen",
+        params={"kassenprofil_id": pid},
+        json={"bestaetigung": "ARTIKEL LOESCHEN"},
+    )
+    assert offen.status_code == 409
+
+    client.post("/api/abschluss/z", json={"kassenprofil_id": pid})
+    reset = client.post(
+        "/api/abschluss/daten-zuruecksetzen",
+        params={"kassenprofil_id": pid},
+        json={"bestaetigung": "ARTIKEL LOESCHEN"},
+    )
+    assert reset.status_code == 200
+    assert reset.json()["artikel_geloescht"] >= 1
+    assert reset.json()["belege_geloescht"] == 1
+    assert reset.json()["verkaufspositionen_geloescht"] >= 1
+    assert reset.json()["zahlungen_geloescht"] == 1
+    assert reset.json()["abschluesse_geloescht"] == 1
+    assert reset.json()["belegkreis_zurueckgesetzt"] is True
+    assert client.get("/api/artikel", params={"kassenprofil_id": pid, "mit_archiviert": True}).json() == []
+    assert client.get("/api/verkauf", params={"kassenprofil_id": pid}).json() == []
+    assert client.get("/api/abschluss", params={"kassenprofil_id": pid}).json() == []
+
+
+def test_daten_reset_mit_auswahl(client):
+    pid, arts, zm = _ctx(client)
+    _verkauf(client, pid, arts["Cola"]["id"], 1, zm["Bar"]["id"], gegeben=1000)
+    client.post("/api/abschluss/z", json={"kassenprofil_id": pid})
+
+    reset = client.post(
+        "/api/abschluss/daten-zuruecksetzen",
+        params={"kassenprofil_id": pid},
+        json={
+            "bestaetigung": "DATEN LOESCHEN",
+            "belege_loeschen": True,
+            "abschluesse_loeschen": True,
+            "artikel_loeschen": False,
+            "pfandzuordnungen_loeschen": False,
+            "druckwarteschlange_loeschen": True,
+            "belegkreis_zuruecksetzen": True,
+        },
+    )
+    assert reset.status_code == 200
+    daten = reset.json()
+    assert daten["belege_geloescht"] == 1
+    assert daten["abschluesse_geloescht"] == 1
+    assert daten["artikel_geloescht"] == 0
+    assert daten["pfandzuordnungen_geloescht"] == 0
+    assert daten["druckauftraege_geloescht"] >= 1
+    assert client.get("/api/artikel", params={"kassenprofil_id": pid, "mit_archiviert": True}).json() != []
+    assert client.get("/api/verkauf", params={"kassenprofil_id": pid}).json() == []
+    assert client.get("/api/druckwarteschlange").json() == []
+
+
+def test_abschluss_reset_braucht_mindestens_eine_auswahl(client):
+    pid, _, _ = _ctx(client)
+    reset = client.post(
+        "/api/abschluss/daten-zuruecksetzen",
+        params={"kassenprofil_id": pid},
+        json={
+            "bestaetigung": "DATEN LOESCHEN",
+            "belege_loeschen": False,
+            "abschluesse_loeschen": False,
+            "artikel_loeschen": False,
+            "pfandzuordnungen_loeschen": False,
+            "druckwarteschlange_loeschen": False,
+            "belegkreis_zuruecksetzen": False,
+        },
+    )
+    assert reset.status_code == 422
+
+
+def test_daten_reset_braucht_bestaetigung(client):
+    pid, _, _ = _ctx(client)
+    reset = client.post(
+        "/api/abschluss/daten-zuruecksetzen",
+        params={"kassenprofil_id": pid},
+        json={"bestaetigung": "bitte"},
+    )
+    assert reset.status_code == 422
+
+
 def test_abschluss_nur_admin(bediener_client):
     pid = bediener_client.get("/api/kassenprofile").json()[0]["id"]
     assert bediener_client.get("/api/abschluss/x", params={"kassenprofil_id": pid}).status_code == 403
     assert bediener_client.post("/api/abschluss/z", json={"kassenprofil_id": pid}).status_code == 403
+    assert bediener_client.post(
+        "/api/abschluss/daten-zuruecksetzen",
+        params={"kassenprofil_id": pid},
+        json={"bestaetigung": "ARTIKEL LOESCHEN"},
+    ).status_code == 403

@@ -15,6 +15,7 @@ from ..auth import require_bediener
 from ..database import get_session
 from ..hardware import service as hw
 from ..models import Benutzer, Verkauf
+from ..timeutils import as_utc
 from ..schemas import (
     ActionResult,
     BerechnungIn,
@@ -96,7 +97,7 @@ def _verkauf_out(v: Verkauf) -> VerkaufOut:
     z = v.zahlungen[0] if v.zahlungen else None
     return VerkaufOut(
         id=v.id, belegnummer=v.belegnummer, kassenprofil_id=v.kassenprofil_id,
-        veranstaltung_id=v.veranstaltung_id, benutzer_id=v.benutzer_id, zeitpunkt=v.zeitpunkt,
+        veranstaltung_id=v.veranstaltung_id, benutzer_id=v.benutzer_id, zeitpunkt=as_utc(v.zeitpunkt),
         waren_cent=v.waren_cent, pfand_cent=v.pfand_cent, gesamt_cent=v.gesamt_cent, status=v.status,
         positionen=[
             PositionOut(typ=p.typ, bezeichnung=p.bezeichnung, einzelpreis_cent=p.einzelpreis_cent,

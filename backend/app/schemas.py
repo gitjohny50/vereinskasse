@@ -45,6 +45,19 @@ class SettingUpdateIn(BaseModel):
     wert: str = Field(max_length=500)
 
 
+class BonLogoIn(BaseModel):
+    raster_b64: str = Field(max_length=200_000)
+    breite_px: int = Field(ge=8, le=576)
+    hoehe_px: int = Field(ge=1, le=384)
+
+
+class BonLogoOut(BaseModel):
+    aktiv: bool
+    breite_px: int = 0
+    hoehe_px: int = 0
+    bytes: int = 0
+
+
 # ===================================================================
 # Phase 2: Authentifizierung
 # ===================================================================
@@ -110,6 +123,7 @@ class KassenprofilIn(BaseModel):
     bonkopf: str = ""
     bonfuss: str = ""
     waehrung: str = "EUR"
+    pfand_aktiv: bool = True
 
 
 class KassenprofilOut(KassenprofilIn):
@@ -273,6 +287,46 @@ class BulkArtikelIn(BaseModel):
     artikelticket_modus: str | None = None
 
 
+class ArtikelCsvImportIn(BaseModel):
+    kassenprofil_id: int
+    csv_text: str = Field(min_length=1, max_length=500_000)
+    delimiter: str = ";"
+    fehlende_stammdaten_anlegen: bool = True
+
+
+class ArtikelCsvImportOut(BaseModel):
+    angelegt: int
+    aktualisiert: int = 0
+    kategorien_angelegt: int = 0
+    pfandarten_angelegt: int = 0
+    fehler: list[str] = []
+
+
+class ArtikelBulkActionOut(BaseModel):
+    anzahl: int
+
+
+class AbschlussArtikelResetIn(BaseModel):
+    bestaetigung: str = Field(min_length=1, max_length=80)
+    belege_loeschen: bool = True
+    abschluesse_loeschen: bool = True
+    artikel_loeschen: bool = True
+    pfandzuordnungen_loeschen: bool = True
+    druckwarteschlange_loeschen: bool = True
+    belegkreis_zuruecksetzen: bool = True
+
+
+class AbschlussArtikelResetOut(BaseModel):
+    artikel_geloescht: int
+    pfandzuordnungen_geloescht: int
+    belege_geloescht: int
+    verkaufspositionen_geloescht: int
+    zahlungen_geloescht: int
+    abschluesse_geloescht: int
+    druckauftraege_geloescht: int
+    belegkreis_zurueckgesetzt: bool
+
+
 class ZahlungsmethodeIn(BaseModel):
     kassenprofil_id: int
     name: str = Field(min_length=1, max_length=120)
@@ -367,6 +421,41 @@ class VerkaufOut(BaseModel):
     status: str
     positionen: list[PositionOut]
     zahlung: ZahlungOut | None
+
+
+class AuswertungItemOut(BaseModel):
+    bezeichnung: str
+    menge: int
+    umsatz_cent: int
+
+
+class AuswertungBucketOut(BaseModel):
+    start: datetime
+    label: str
+    anzahl: int
+    gesamt_cent: int
+    items: list[AuswertungItemOut]
+
+
+class AuswertungVerkaufOut(BaseModel):
+    id: int
+    belegnummer: str
+    zeitpunkt: datetime
+    gesamt_cent: int
+    zahlung: str
+    items: list[AuswertungItemOut]
+
+
+class VerkaufsAuswertungOut(BaseModel):
+    kassenprofil_id: int
+    von: datetime
+    bis: datetime
+    bucket_modus: str
+    anzahl_verkaeufe: int
+    gesamt_cent: int
+    top_artikel: list[AuswertungItemOut]
+    buckets: list[AuswertungBucketOut]
+    verkaeufe: list[AuswertungVerkaufOut]
 
 
 # ===================================================================

@@ -26,6 +26,11 @@ DEFAULT_HW_SETTINGS: dict[str, str] = {
     "drucker.codepage_id": "19",          # CP858 (Euro/Umlaute) - am Gerät prüfen
     "drucker.encoding": "cp858",
     "bon.breite_zeichen": "42",           # 80mm-Papier: meist 42-48 Zeichen
+    "bon.logo.aktiv": "0",
+    "bon.logo.breite_px": "0",
+    "bon.logo.hoehe_px": "0",
+    "bon.logo.raster_b64": "",
+    "diagnose.testseite.qr_url": "https://vereinskasse.local/test",
     # Schnitt (Lastenheft 14.6)
     "schnitt.modus": "partial",           # partial | full | none
     "schnitt.vorschub_zeilen": "3",

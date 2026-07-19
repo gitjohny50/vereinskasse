@@ -7,8 +7,15 @@ und Produkt-ID sowie der Endpunkt müssen am echten NetumScan NS-8360L per
 das Modul auch ohne installierte USB-Bibliothek geladen werden kann.
 """
 from __future__ import annotations
+from time import sleep
 
 from .printer_base import PrinterAdapter, PrintResult, PrinterStatus
+
+USB_WAKEUP_BYTES = b"\x1b\x40\x1b\x64\x02"
+USB_WAKEUP_DELAY_SECONDS = 0.35
+USB_CHUNK_DELAY_SECONDS = 0.02
+USB_FINISH_DELAY_SECONDS = 0.8
+USB_WRITE_CHUNK_SIZE = 256
 
 
 class UsbPrinter(PrinterAdapter):
@@ -47,7 +54,13 @@ class UsbPrinter(PrinterAdapter):
         dev = None
         try:
             dev = self._open()
-            dev.write(self.out_endpoint, payload, timeout=self.timeout_ms)
+            dev.write(self.out_endpoint, USB_WAKEUP_BYTES, timeout=self.timeout_ms)
+            sleep(USB_WAKEUP_DELAY_SECONDS)
+            for start in range(0, len(payload), USB_WRITE_CHUNK_SIZE):
+                chunk = payload[start : start + USB_WRITE_CHUNK_SIZE]
+                dev.write(self.out_endpoint, chunk, timeout=self.timeout_ms)
+                sleep(USB_CHUNK_DELAY_SECONDS)
+            sleep(USB_FINISH_DELAY_SECONDS)
             return PrintResult(ok=True, detail="USB", bytes_sent=len(payload))
         except Exception as exc:  # noqa: BLE001 - jede USB-Störung sauber melden
             return PrintResult(ok=False, detail=f"USB-Fehler: {exc}", bytes_sent=0)

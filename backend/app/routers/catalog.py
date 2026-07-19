@@ -10,6 +10,9 @@ Lesen ab Bediener, Schreiben nur Administrator.
 """
 from __future__ import annotations
 
+import csv
+import io
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -22,10 +25,14 @@ from ..models import (
     Kassenprofil,
     Kategorie,
     Pfandart,
+    Verkauf,
     Zahlungsmethode,
 )
 from ..schemas import (
     ArtikelIn,
+    ArtikelBulkActionOut,
+    ArtikelCsvImportIn,
+    ArtikelCsvImportOut,
     ArtikelOut,
     ArtikelUpdateIn,
     BulkArtikelIn,
@@ -50,6 +57,100 @@ def _profil_or_422(session: Session, profil_id: int) -> None:
         raise HTTPException(status_code=422, detail="Unbekanntes Kassenprofil")
 
 
+def _norm_name(value: str) -> str:
+    return " ".join(value.strip().lower().split())
+
+
+def _kategorie_name_frei(session: Session, kassenprofil_id: int, name: str, *, exclude_id: int | None = None) -> bool:
+    ziel = _norm_name(name)
+    rows = session.query(Kategorie).filter(Kategorie.kassenprofil_id == kassenprofil_id).all()
+    return all(k.id == exclude_id or _norm_name(k.name) != ziel for k in rows)
+
+
+def _artikel_by_name(session: Session, kassenprofil_id: int) -> dict[str, Artikel]:
+    rows = session.query(Artikel).filter(Artikel.kassenprofil_id == kassenprofil_id).all()
+    return {_norm_name(a.name): a for a in rows}
+
+
+def _pruefe_kategorie(session: Session, kassenprofil_id: int, kategorie_id: int | None) -> None:
+    if kategorie_id is None:
+        return
+    k = session.get(Kategorie, kategorie_id)
+    if k is None or k.kassenprofil_id != kassenprofil_id:
+        raise HTTPException(status_code=422, detail="Kategorie passt nicht zum Kassenprofil")
+
+
+def _parse_bool(value: str, default: bool = True) -> bool:
+    text = value.strip().lower()
+    if text == "":
+        return default
+    if text in {"1", "true", "wahr", "ja", "j", "yes", "y"}:
+        return True
+    if text in {"0", "false", "falsch", "nein", "n", "no"}:
+        return False
+    raise ValueError(f"Ungültiger Ja/Nein-Wert: {value}")
+
+
+def _parse_cent(value: str) -> int:
+    text = value.strip().replace("€", "").replace(" ", "")
+    if not text:
+        raise ValueError("Preis fehlt")
+    if "," in text:
+        text = text.replace(".", "").replace(",", ".")
+    cent = round(float(text) * 100)
+    if cent < 0:
+        raise ValueError("Preis darf nicht negativ sein")
+    return cent
+
+
+def _lookup_by_name(rows, name: str):
+    ziel = _norm_name(name)
+    for row in rows:
+        if _norm_name(row.name) == ziel or _norm_name(getattr(row, "kurzname", "")) == ziel:
+            return row
+    return None
+
+
+def _get_or_create_kategorie(session: Session, kategorien: list[Kategorie], profil_id: int, name: str, allow_create: bool) -> tuple[Kategorie | None, bool]:
+    if not name:
+        return None, False
+    kat = _lookup_by_name(kategorien, name)
+    if kat is not None:
+        return kat, False
+    if not allow_create:
+        raise ValueError(f"Kategorie nicht gefunden: {name}")
+    kat = Kategorie(kassenprofil_id=profil_id, name=name, sortierung=len(kategorien) + 1, aktiv=True)
+    session.add(kat)
+    session.flush()
+    kategorien.append(kat)
+    return kat, True
+
+
+def _parse_pfand_part(value: str) -> tuple[str, int, int | None]:
+    parts = [p.strip() for p in value.split(":")]
+    name = parts[0] if parts else ""
+    if not name:
+        raise ValueError("Pfandname fehlt")
+    menge = int(parts[1]) if len(parts) >= 2 and parts[1] else 1
+    betrag = _parse_cent(parts[2]) if len(parts) >= 3 and parts[2] else None
+    return name, max(1, menge), betrag
+
+
+def _get_or_create_pfandart(session: Session, pfandarten: list[Pfandart], profil_id: int, name: str, betrag_cent: int | None, allow_create: bool) -> tuple[Pfandart, bool]:
+    pfand = _lookup_by_name(pfandarten, name)
+    if pfand is not None:
+        return pfand, False
+    if not allow_create:
+        raise ValueError(f"Pfandart nicht gefunden: {name}")
+    if betrag_cent is None:
+        raise ValueError(f"Pfandart nicht gefunden und kein Betrag angegeben: {name}")
+    pfand = Pfandart(kassenprofil_id=profil_id, name=name, kurzname=name, betrag_cent=betrag_cent, aktiv=True, rueckgabe_erlaubt=True)
+    session.add(pfand)
+    session.flush()
+    pfandarten.append(pfand)
+    return pfand, True
+
+
 # ===================================================================
 # Kategorien (Lastenheft 9)
 # ===================================================================
@@ -67,6 +168,8 @@ def kategorien(kassenprofil_id: int, session: Session = Depends(get_session)) ->
 @router.post("/kategorien", response_model=KategorieOut, status_code=201, dependencies=[Depends(require_admin)])
 def kategorie_anlegen(payload: KategorieIn, session: Session = Depends(get_session)) -> KategorieOut:
     _profil_or_422(session, payload.kassenprofil_id)
+    if not _kategorie_name_frei(session, payload.kassenprofil_id, payload.name):
+        raise HTTPException(status_code=409, detail="Kategorie existiert bereits.")
     k = Kategorie(**payload.model_dump())
     session.add(k)
     session.commit()
@@ -79,11 +182,39 @@ def kategorie_aendern(kid: int, payload: KategorieIn, session: Session = Depends
     k = session.get(Kategorie, kid)
     if k is None:
         raise HTTPException(status_code=404, detail="Kategorie nicht gefunden")
+    if not _kategorie_name_frei(session, k.kassenprofil_id, payload.name, exclude_id=k.id):
+        raise HTTPException(status_code=409, detail="Kategorie existiert bereits.")
     for field, value in payload.model_dump(exclude={"kassenprofil_id"}).items():
         setattr(k, field, value)
     session.commit()
     session.refresh(k)
     return _kat_out(k)
+
+
+@router.delete("/kategorien/{kid}", response_model=KategorieOut, dependencies=[Depends(require_admin)])
+def kategorie_loeschen(kid: int, session: Session = Depends(get_session)) -> KategorieOut:
+    k = session.get(Kategorie, kid)
+    if k is None:
+        raise HTTPException(status_code=404, detail="Kategorie nicht gefunden")
+    offene = (
+        session.query(Verkauf.id)
+        .filter(Verkauf.kassenprofil_id == k.kassenprofil_id, Verkauf.abschluss_id.is_(None))
+        .first()
+    )
+    if offene is not None:
+        raise HTTPException(status_code=409, detail="Es gibt noch offene Verkäufe. Bitte zuerst den Z-Abschluss durchführen.")
+    artikel = session.query(Artikel).filter(Artikel.kategorie_id == k.id).all()
+    vorher = f"{k.name}, {len(artikel)} Artikel"
+    out = _kat_out(k)
+    for a in artikel:
+        a.kategorie_id = None
+    session.delete(k)
+    session.add(AuditLog(
+        benutzer="administrator", aktion="kategorie.loeschen", datensatz=str(kid),
+        vorher=vorher, nachher=f"{len(artikel)} Artikel ohne Kategorie",
+    ))
+    session.commit()
+    return out
 
 
 # ===================================================================
@@ -142,6 +273,7 @@ def artikel_liste(
 def artikel_anlegen(payload: ArtikelIn, session: Session = Depends(get_session)) -> ArtikelOut:
     _profil_or_422(session, payload.kassenprofil_id)
     _pruefe_ticketmodus(payload.artikelticket_modus)
+    _pruefe_kategorie(session, payload.kassenprofil_id, payload.kategorie_id)
     daten = payload.model_dump(exclude={"pfandzuordnungen"})
     artikel = Artikel(**daten)
     session.add(artikel)
@@ -152,6 +284,129 @@ def artikel_anlegen(payload: ArtikelIn, session: Session = Depends(get_session))
     session.commit()
     session.refresh(artikel)
     return _art_out(artikel)
+
+
+@router.post("/artikel/csv-import", response_model=ArtikelCsvImportOut, dependencies=[Depends(require_admin)])
+def artikel_csv_import(payload: ArtikelCsvImportIn, session: Session = Depends(get_session)) -> ArtikelCsvImportOut:
+    _profil_or_422(session, payload.kassenprofil_id)
+    delimiter = payload.delimiter if payload.delimiter in {",", ";", "\t"} else ";"
+    kategorien = session.query(Kategorie).filter(Kategorie.kassenprofil_id == payload.kassenprofil_id).all()
+    pfandarten = session.query(Pfandart).filter(Pfandart.kassenprofil_id == payload.kassenprofil_id).all()
+    bekannte_artikel = _artikel_by_name(session, payload.kassenprofil_id)
+    csv_artikel: set[str] = set()
+    reader = csv.DictReader(io.StringIO(payload.csv_text), delimiter=delimiter)
+    if not reader.fieldnames:
+        raise HTTPException(status_code=422, detail="CSV enthält keine Kopfzeile.")
+
+    fehler: list[str] = []
+    created: list[Artikel] = []
+    updated: list[Artikel] = []
+    kategorien_angelegt = 0
+    pfandarten_angelegt = 0
+    for line_no, row in enumerate(reader, start=2):
+        try:
+            name = (row.get("name") or row.get("artikel") or "").strip()
+            if not name:
+                raise ValueError("name fehlt")
+            norm = _norm_name(name)
+            if norm in csv_artikel:
+                raise ValueError(f"Artikel doppelt in CSV: {name}")
+            csv_artikel.add(norm)
+            preis_cent = _parse_cent(row.get("preis") or row.get("preis_eur") or row.get("preis_cent") or "")
+            if row.get("preis_cent") and not (row.get("preis") or row.get("preis_eur")):
+                preis_cent = int(row["preis_cent"])
+            kat_name = (row.get("kategorie") or "").strip()
+            kat, kat_created = _get_or_create_kategorie(
+                session, kategorien, payload.kassenprofil_id, kat_name, payload.fehlende_stammdaten_anlegen,
+            )
+            if kat_created:
+                kategorien_angelegt += 1
+            modus = (row.get("artikelticket_modus") or row.get("ticket") or "pro_stueck").strip() or "pro_stueck"
+            _pruefe_ticketmodus(modus)
+            artikel = bekannte_artikel.get(norm)
+            is_new = artikel is None
+            if artikel is None:
+                artikel = Artikel(kassenprofil_id=payload.kassenprofil_id, name=name)
+                session.add(artikel)
+                created.append(artikel)
+                bekannte_artikel[norm] = artikel
+            else:
+                updated.append(artikel)
+            artikel.name = name
+            artikel.kurzname = (row.get("kurzname") or "").strip()
+            artikel.preis_cent = preis_cent
+            artikel.kategorie_id = kat.id if kat else None
+            artikel.sortierung = int((row.get("reihenfolge") or row.get("sortierung") or "0").strip() or "0")
+            artikel.artikelticket_modus = modus
+            artikel.artikelnummer = (row.get("artikelnummer") or "").strip()
+            artikel.barcode = (row.get("barcode") or "").strip()
+            artikel.aktiv = _parse_bool(row.get("aktiv") or "", default=True)
+            artikel.archiviert = False
+            session.flush()
+            if not is_new:
+                artikel.pfandzuordnungen.clear()
+                session.flush()
+            pfand_text = (row.get("pfand") or "").strip()
+            if pfand_text:
+                for part in pfand_text.split("|"):
+                    if not part.strip():
+                        continue
+                    pf_name, menge, betrag_cent = _parse_pfand_part(part)
+                    pfand, pf_created = _get_or_create_pfandart(
+                        session, pfandarten, payload.kassenprofil_id, pf_name, betrag_cent,
+                        payload.fehlende_stammdaten_anlegen,
+                    )
+                    if pf_created:
+                        pfandarten_angelegt += 1
+                    session.add(ArtikelPfandZuordnung(
+                        artikel_id=artikel.id,
+                        pfandart_id=pfand.id,
+                        menge_pro_einheit=max(1, menge),
+                        automatisch=True,
+                    ))
+        except Exception as exc:  # noqa: BLE001 - sammelt zeilenweise Importfehler
+            fehler.append(f"Zeile {line_no}: {exc}")
+
+    if fehler:
+        session.rollback()
+        return ArtikelCsvImportOut(angelegt=0, fehler=fehler)
+    session.add(AuditLog(benutzer="administrator", aktion="artikel.csv_import", datensatz=str(payload.kassenprofil_id),
+                         nachher=f"{len(created)} angelegt, {len(updated)} aktualisiert"))
+    session.commit()
+    return ArtikelCsvImportOut(
+        angelegt=len(created),
+        aktualisiert=len(updated),
+        kategorien_angelegt=kategorien_angelegt,
+        pfandarten_angelegt=pfandarten_angelegt,
+        fehler=[],
+    )
+
+
+@router.post("/artikel/alle-archivieren", response_model=ArtikelBulkActionOut, dependencies=[Depends(require_admin)])
+def artikel_alle_archivieren(kassenprofil_id: int, session: Session = Depends(get_session)) -> ArtikelBulkActionOut:
+    rows = session.query(Artikel).filter(Artikel.kassenprofil_id == kassenprofil_id, Artikel.archiviert.is_(False)).all()
+    for a in rows:
+        a.archiviert = True
+        a.aktiv = False
+    session.add(AuditLog(benutzer="administrator", aktion="artikel.alle_archivieren", datensatz=str(kassenprofil_id),
+                         nachher=f"{len(rows)} Artikel"))
+    session.commit()
+    return ArtikelBulkActionOut(anzahl=len(rows))
+
+
+@router.post("/artikel/pfand-zuruecksetzen", response_model=ArtikelBulkActionOut, dependencies=[Depends(require_admin)])
+def artikel_pfand_zuruecksetzen(kassenprofil_id: int, session: Session = Depends(get_session)) -> ArtikelBulkActionOut:
+    artikel_ids = [a.id for a in session.query(Artikel.id).filter(Artikel.kassenprofil_id == kassenprofil_id).all()]
+    if not artikel_ids:
+        return ArtikelBulkActionOut(anzahl=0)
+    rows = session.query(ArtikelPfandZuordnung).filter(ArtikelPfandZuordnung.artikel_id.in_(artikel_ids)).all()
+    anzahl = len(rows)
+    for row in rows:
+        session.delete(row)
+    session.add(AuditLog(benutzer="administrator", aktion="artikel.pfand_zuruecksetzen", datensatz=str(kassenprofil_id),
+                         nachher=f"{anzahl} Zuordnungen"))
+    session.commit()
+    return ArtikelBulkActionOut(anzahl=anzahl)
 
 
 @router.get("/artikel/{aid}", response_model=ArtikelOut, dependencies=[Depends(require_bediener)])
@@ -170,6 +425,8 @@ def artikel_aendern(aid: int, payload: ArtikelUpdateIn, session: Session = Depen
     daten = payload.model_dump(exclude_unset=True, exclude={"pfandzuordnungen"})
     if "artikelticket_modus" in daten:
         _pruefe_ticketmodus(daten["artikelticket_modus"])
+    if "kategorie_id" in daten:
+        _pruefe_kategorie(session, a.kassenprofil_id, daten["kategorie_id"])
     vorher_preis = a.preis_cent
     for field, value in daten.items():
         setattr(a, field, value)
@@ -307,8 +564,11 @@ def _pruefe_ticketmodus(modus: str) -> None:
 
 def _setze_zuordnungen(session: Session, artikel: Artikel, zuordnungen: list[PfandZuordnungIn]) -> None:
     for z in zuordnungen:
-        if session.get(Pfandart, z.pfandart_id) is None:
+        pfand = session.get(Pfandart, z.pfandart_id)
+        if pfand is None:
             raise HTTPException(status_code=422, detail=f"Unbekannte Pfandart {z.pfandart_id}")
+        if pfand.kassenprofil_id != artikel.kassenprofil_id:
+            raise HTTPException(status_code=422, detail=f"Pfandart {z.pfandart_id} passt nicht zum Kassenprofil")
         session.add(ArtikelPfandZuordnung(
             artikel_id=artikel.id, pfandart_id=z.pfandart_id, menge_pro_einheit=z.menge_pro_einheit,
             automatisch=z.automatisch, abweichender_betrag_cent=z.abweichender_betrag_cent,

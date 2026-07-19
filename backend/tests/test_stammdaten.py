@@ -23,6 +23,34 @@ def test_profile_requires_existing_verein(client):
     assert r.status_code == 422
 
 
+def test_verein_und_profil_aendern_mit_pfand_schalter(client):
+    v = client.post("/api/vereine", json={"name": "Alter Name"}).json()
+    changed = client.put(f"/api/vereine/{v['id']}", json={"name": "Neuer Name", "kontakt": "info@example.test"}).json()
+    assert changed["name"] == "Neuer Name"
+    assert changed["kontakt"] == "info@example.test"
+
+    p = client.post("/api/kassenprofile", json={"name": "Profil", "verein_id": v["id"], "pfand_aktiv": True}).json()
+    assert p["pfand_aktiv"] is True
+    changed_profile = client.put(f"/api/kassenprofile/{p['id']}", json={
+        "name": "Profil neu", "verein_id": v["id"], "waehrung": "EUR", "pfand_aktiv": False,
+    }).json()
+    assert changed_profile["name"] == "Profil neu"
+    assert changed_profile["pfand_aktiv"] is False
+    profiles = client.get("/api/kassenprofile").json()
+    assert next(row for row in profiles if row["id"] == p["id"])["pfand_aktiv"] is False
+
+
+def test_kassenprofil_loeschen_deaktiviert(client):
+    v = client.post("/api/vereine", json={"name": "Löschverein"}).json()
+    p = client.post("/api/kassenprofile", json={"name": "Weg damit", "verein_id": v["id"]}).json()
+    deleted = client.delete(f"/api/kassenprofile/{p['id']}")
+    assert deleted.status_code == 200
+    assert deleted.json()["aktiv"] is False
+    assert all(row["id"] != p["id"] for row in client.get("/api/kassenprofile").json())
+    inactive = client.get("/api/kassenprofile", params={"mit_inaktiv": True}).json()
+    assert next(row for row in inactive if row["id"] == p["id"])["aktiv"] is False
+
+
 def test_payment_methods_seeded_and_creatable(client):
     pid = client.get("/api/kassenprofile").json()[0]["id"]
     seeded = client.get("/api/zahlungsmethoden", params={"kassenprofil_id": pid}).json()

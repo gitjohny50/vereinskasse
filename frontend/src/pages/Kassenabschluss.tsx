@@ -1,8 +1,17 @@
 import { useEffect, useState } from "react";
 import {
   api, ApiError, euroToCents, formatCents,
-  type Bericht, type KassenabschlussKopf as Kopf, type Kassenprofil,
+  type AbschlussArtikelResetResult, type AbschlussResetOptions, type Bericht, type KassenabschlussKopf as Kopf, type Kassenprofil,
 } from "../api";
+
+const DEFAULT_RESET_OPTIONS: AbschlussResetOptions = {
+  belege_loeschen: true,
+  abschluesse_loeschen: true,
+  artikel_loeschen: true,
+  pfandzuordnungen_loeschen: true,
+  druckwarteschlange_loeschen: true,
+  belegkreis_zuruecksetzen: true,
+};
 
 export function Kassenabschluss({ profil }: { profil: Kassenprofil }) {
   const [x, setX] = useState<Bericht | null>(null);
@@ -14,6 +23,10 @@ export function Kassenabschluss({ profil }: { profil: Kassenprofil }) {
   const [fehler, setFehler] = useState<string | null>(null);
   const [erfolg, setErfolg] = useState<Bericht | null>(null);
   const [detail, setDetail] = useState<Bericht | null>(null);
+  const [resetConfirm, setResetConfirm] = useState(false);
+  const [resetText, setResetText] = useState("");
+  const [resetResult, setResetResult] = useState<AbschlussArtikelResetResult | null>(null);
+  const [resetOptions, setResetOptions] = useState<AbschlussResetOptions>(DEFAULT_RESET_OPTIONS);
 
   async function laden() {
     const [xb, l] = await Promise.all([api.xBericht(profil.id), api.abschluesse(profil.id)]);
@@ -39,8 +52,45 @@ export function Kassenabschluss({ profil }: { profil: Kassenprofil }) {
     finally { setBusy(false); }
   }
 
+  async function artikeldatenZuruecksetzen() {
+    if (resetText.trim().toUpperCase() !== "DATEN LOESCHEN") {
+      setFehler('Bitte zur Sicherheit "DATEN LOESCHEN" eingeben.');
+      return;
+    }
+    if (!Object.values(resetOptions).some(Boolean)) {
+      setFehler("Bitte mindestens einen Datenbereich auswählen.");
+      return;
+    }
+    setBusy(true); setFehler(null); setResetResult(null);
+    try {
+      const res = await api.abschlussArtikeldatenZuruecksetzen(profil.id, resetText, resetOptions);
+      setResetResult(res); setResetConfirm(false); setResetText("");
+      await laden();
+    } catch (e) { setFehler(e instanceof ApiError ? e.message : "Artikeldaten konnten nicht zurückgesetzt werden."); }
+    finally { setBusy(false); }
+  }
+
   async function zeigeDetail(id: number) {
     try { setDetail(await api.abschlussDetail(id)); } catch (e) { setFehler(e instanceof ApiError ? e.message : "Detail nicht ladbar."); }
+  }
+
+  async function ladeCsv(id: number) {
+    try {
+      setFehler(null);
+      await api.abschlussCsv(id);
+    } catch (e) {
+      setFehler(e instanceof ApiError ? e.message : "CSV konnte nicht heruntergeladen werden.");
+    }
+  }
+
+  function setResetOption<K extends keyof AbschlussResetOptions>(key: K, value: AbschlussResetOptions[K]) {
+    setResetOptions((alt) => {
+      const next = { ...alt, [key]: value };
+      if (key === "artikel_loeschen" && value) next.pfandzuordnungen_loeschen = true;
+      if (key === "belege_loeschen" && !value) next.abschluesse_loeschen = false;
+      if (key === "abschluesse_loeschen" && value) next.belege_loeschen = true;
+      return next;
+    });
   }
 
   function zeit(iso: string | null) {
@@ -91,7 +141,7 @@ export function Kassenabschluss({ profil }: { profil: Kassenprofil }) {
             {differenz != null && (
               <div className="row korb-gesamt" style={{ justifyContent: "space-between" }}>
                 <span>Differenz</span>
-                <span style={{ color: differenz === 0 ? "var(--ok, #0e7c6b)" : "var(--danger, #b3261e)" }}>
+                <span style={{ color: differenz === 0 ? "var(--ok, #2563eb)" : "var(--danger, #b3261e)" }}>
                   {differenz > 0 ? "+" : ""}{formatCents(differenz)}
                 </span>
               </div>
@@ -121,11 +171,105 @@ export function Kassenabschluss({ profil }: { profil: Kassenprofil }) {
             <div className="verkauf-ok" style={{ marginTop: 14 }}>
               <div><strong>{erfolg.nummer}</strong> abgeschlossen · {erfolg.anzahl_verkaeufe} Verkäufe · {formatCents(erfolg.gesamt_cent)}</div>
               {erfolg.differenz_cent != null && <div>Kassendifferenz: {erfolg.differenz_cent > 0 ? "+" : ""}{formatCents(erfolg.differenz_cent)}</div>}
-              {erfolg.abschluss_id && <button className="btn btn-sm" onClick={() => api.abschlussNachdruck(erfolg.abschluss_id!)}>Bericht nachdrucken</button>}
+              {erfolg.abschluss_id && (
+                <div className="row" style={{ gap: 10 }}>
+                  <button className="btn btn-sm" onClick={() => api.abschlussNachdruck(erfolg.abschluss_id!)}>Bericht nachdrucken</button>
+                  <button className="btn btn-sm" onClick={() => ladeCsv(erfolg.abschluss_id!)}>CSV herunterladen</button>
+                </div>
+              )}
             </div>
           )}
         </div>
       )}
+
+      <div className="card" style={{ marginBottom: 18 }}>
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+          <div>
+            <div className="section-title">Datenbank zurücksetzen</div>
+            <p style={{ color: "var(--muted)", fontSize: 13, margin: "4px 0 0" }}>
+              Für den Start nach einer abgeschlossenen Veranstaltung: ausgewählte Verkaufs-, Abschluss- und Stammdaten löschen.
+              Belege lassen sich nur zurücksetzen, wenn vorher keine offenen Verkäufe mehr vorhanden sind.
+            </p>
+          </div>
+        </div>
+
+        {resetResult && (
+          <div className="verkauf-ok" style={{ marginTop: 12 }}>
+            <div>
+              {resetResult.belege_geloescht} Belege gelöscht · {resetResult.abschluesse_geloescht} Abschlüsse gelöscht ·
+              {" "}{resetResult.artikel_geloescht} Artikel gelöscht · {resetResult.pfandzuordnungen_geloescht} Pfandzuordnungen gelöscht ·
+              {" "}{resetResult.druckauftraege_geloescht} Druckaufträge gelöscht
+            </div>
+            {resetResult.belegkreis_zurueckgesetzt && <div>Belegnummern starten beim nächsten Verkauf wieder bei 000001.</div>}
+          </div>
+        )}
+
+        {!resetConfirm ? (
+          <div className="row" style={{ marginTop: 14 }}>
+            <button className="btn btn-danger" onClick={() => { setResetConfirm(true); setResetResult(null); }}>
+              Datenbank zurücksetzen
+            </button>
+            <span style={{ color: "var(--muted)", fontSize: 13, alignSelf: "center" }}>
+              Nur möglich, wenn keine offenen Verkäufe vorhanden sind.
+            </span>
+          </div>
+        ) : (
+          <div className="verkauf-ok" style={{ marginTop: 14, borderColor: "var(--danger)", background: "#fef2f2" }}>
+            <div>
+              Wähle aus, welche Daten wirklich gelöscht werden sollen. Bitte vorher den Z-Abschluss durchführen.
+            </div>
+            <div className="feld-grid" style={{ marginTop: 10 }}>
+              <ResetOption
+                label="Belege und Verkaufsdaten"
+                text="löscht Belege, Positionen und Zahlungen"
+                checked={resetOptions.belege_loeschen}
+                onChange={(v) => setResetOption("belege_loeschen", v)}
+              />
+              <ResetOption
+                label="Abschlüsse"
+                text="löscht gespeicherte Z-Abschlüsse"
+                checked={resetOptions.abschluesse_loeschen}
+                onChange={(v) => setResetOption("abschluesse_loeschen", v)}
+              />
+              <ResetOption
+                label="Artikel"
+                text="löscht Artikeldaten aus diesem Profil"
+                checked={resetOptions.artikel_loeschen}
+                onChange={(v) => setResetOption("artikel_loeschen", v)}
+              />
+              <ResetOption
+                label="Pfandzuordnungen"
+                text="entfernt Pfand-Verknüpfungen an Artikeln"
+                checked={resetOptions.pfandzuordnungen_loeschen}
+                disabled={resetOptions.artikel_loeschen}
+                onChange={(v) => setResetOption("pfandzuordnungen_loeschen", v)}
+              />
+              <ResetOption
+                label="Druckwarteschlange"
+                text="löscht alle Druckaufträge aus der Warteschlange"
+                checked={resetOptions.druckwarteschlange_loeschen}
+                onChange={(v) => setResetOption("druckwarteschlange_loeschen", v)}
+              />
+              <ResetOption
+                label="Belegnummern zurücksetzen"
+                text="nächster Beleg startet wieder bei 000001"
+                checked={resetOptions.belegkreis_zuruecksetzen}
+                onChange={(v) => setResetOption("belegkreis_zuruecksetzen", v)}
+              />
+            </div>
+            <label style={{ maxWidth: 360 }}>
+              Bestätigung
+              <input value={resetText} onChange={(e) => setResetText(e.target.value)} placeholder="DATEN LOESCHEN" />
+            </label>
+            <div className="row" style={{ gap: 10 }}>
+              <button className="btn btn-danger" disabled={busy || resetText.trim().toUpperCase() !== "DATEN LOESCHEN"} onClick={artikeldatenZuruecksetzen}>
+                Ja, ausgewählte Daten löschen
+              </button>
+              <button className="btn" disabled={busy} onClick={() => { setResetConfirm(false); setResetText(""); setResetOptions(DEFAULT_RESET_OPTIONS); }}>Abbrechen</button>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="section-title" style={{ marginBottom: 8 }}>Bisherige Abschlüsse</div>
       <table className="tabelle">
@@ -142,6 +286,7 @@ export function Kassenabschluss({ profil }: { profil: Kassenprofil }) {
               </td>
               <td className="num">
                 <button className="btn btn-sm" onClick={() => zeigeDetail(a.id)}>Detail</button>
+                <button className="btn btn-sm" onClick={() => ladeCsv(a.id)}>CSV</button>
                 <button className="btn btn-sm" onClick={() => api.abschlussNachdruck(a.id)}>Nachdruck</button>
               </td>
             </tr>
@@ -154,7 +299,10 @@ export function Kassenabschluss({ profil }: { profil: Kassenprofil }) {
         <div className="card" style={{ marginTop: 16 }}>
           <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
             <div className="section-title">{detail.nummer} · {zeit(detail.bis)}</div>
-            <button className="btn btn-sm" onClick={() => setDetail(null)}>Schließen</button>
+            <div className="row" style={{ gap: 10 }}>
+              {detail.abschluss_id && <button className="btn btn-sm" onClick={() => ladeCsv(detail.abschluss_id!)}>CSV herunterladen</button>}
+              <button className="btn btn-sm" onClick={() => setDetail(null)}>Schließen</button>
+            </div>
           </div>
           <div className="korb-summen" style={{ marginTop: 8 }}>
             <Zeile label="Waren" wert={detail.waren_cent} />
@@ -166,7 +314,7 @@ export function Kassenabschluss({ profil }: { profil: Kassenprofil }) {
             {detail.differenz_cent != null && (
               <div className="row" style={{ justifyContent: "space-between", maxWidth: 360 }}>
                 <span>Differenz</span>
-                <span style={{ color: detail.differenz_cent === 0 ? "var(--ok, #0e7c6b)" : "var(--danger, #b3261e)" }}>
+                <span style={{ color: detail.differenz_cent === 0 ? "var(--ok, #2563eb)" : "var(--danger, #b3261e)" }}>
                   {detail.differenz_cent > 0 ? "+" : ""}{formatCents(detail.differenz_cent)}
                 </span>
               </div>
@@ -198,5 +346,33 @@ function Zeile({ label, wert, gross }: { label: string; wert: number; gross?: bo
     <div className={`row ${gross ? "korb-gesamt" : ""}`} style={{ justifyContent: "space-between", maxWidth: 360 }}>
       <span>{label}</span><span>{formatCents(wert)}</span>
     </div>
+  );
+}
+
+function ResetOption({
+  label, text, checked, disabled, onChange,
+}: { label: string; text: string; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label className="row" style={{
+      alignItems: "flex-start",
+      gap: 10,
+      padding: 12,
+      border: "1px solid var(--line)",
+      borderRadius: 8,
+      background: disabled ? "#f8fafc" : "#fff",
+      color: disabled ? "var(--muted)" : undefined,
+    }}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ width: 20, height: 20, marginTop: 2 }}
+      />
+      <span>
+        <strong>{label}</strong>
+        <span style={{ display: "block", color: "var(--muted)", fontSize: 13 }}>{text}</span>
+      </span>
+    </label>
   );
 }

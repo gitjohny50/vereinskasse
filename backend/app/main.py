@@ -8,7 +8,9 @@ Adresse öffnen muss.
 from __future__ import annotations
 
 import asyncio
+import getpass
 import os
+import socket
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -18,8 +20,10 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import SessionLocal, init_db
+from .hardware import service as hw_service
 from .hardware.service import ensure_defaults
-from .routers import auth, catalog, diagnostics, health, profiles, reports, sales, settings as settings_router, users
+from .models import Artikel, Kassenprofil
+from .routers import analytics, auth, catalog, diagnostics, health, profiles, reports, sales, settings as settings_router, users
 from .routers import print_queue as print_queue_router
 from . import print_queue
 from .seed import seed_all
@@ -55,6 +59,95 @@ async def _druck_worker(stop: asyncio.Event) -> None:
             pass
 
 
+def _startup_delay() -> float:
+    try:
+        return float(os.environ.get("VK_STARTUP_BELEG_DELAY", "8"))
+    except ValueError:
+        return 8.0
+
+
+def _local_ips() -> list[str]:
+    ips: set[str] = set()
+    hostname = socket.gethostname()
+    try:
+        for result in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            ip = result[4][0]
+            if not ip.startswith("127."):
+                ips.add(ip)
+    except OSError:
+        pass
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            if ip and not ip.startswith("127."):
+                ips.add(ip)
+    except OSError:
+        pass
+    return sorted(ips)
+
+
+def _startup_info() -> dict[str, str | list[str]]:
+    host = os.environ.get("VK_HOST", "0.0.0.0")
+    port = os.environ.get("VK_PORT", "8000")
+    ips = _local_ips()
+    urls = [f"http://{ip}:{port}" for ip in ips]
+    hostname = socket.gethostname()
+    if hostname:
+        urls.append(f"http://{hostname}.local:{port}")
+    public_host = os.environ.get("VK_PUBLIC_HOST", "").strip()
+    if public_host:
+        urls.insert(0, f"http://{public_host}:{port}")
+
+    with SessionLocal() as session:
+        profil = session.query(Kassenprofil).filter(Kassenprofil.aktiv.is_(True)).order_by(Kassenprofil.name).first()
+        artikel_count = 0
+        profil_text = "-"
+        if profil is not None:
+            profil_text = f"{profil.name} ({profil.id})"
+            artikel_count = session.query(Artikel).filter(
+                Artikel.kassenprofil_id == profil.id,
+                Artikel.aktiv.is_(True),
+                Artikel.archiviert.is_(False),
+            ).count()
+        cfg = hw_service.load_hw_settings(session)
+        drucker = cfg.get("drucker.transport", "mock")
+
+    return {
+        "zeit": __import__("datetime").datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
+        "hostname": hostname or "-",
+        "user": getpass.getuser(),
+        "version": settings.app_version,
+        "profil": f"{profil_text}, {artikel_count} Artikel",
+        "data_dir": str(settings.data_dir),
+        "drucker": drucker,
+        "host": host,
+        "urls": urls,
+    }
+
+
+async def _startup_receipt_task(stop: asyncio.Event) -> None:
+    if os.environ.get("VK_STARTUP_BELEG", "0") != "1":
+        return
+    try:
+        await asyncio.wait_for(stop.wait(), timeout=_startup_delay())
+        return
+    except asyncio.TimeoutError:
+        pass
+    if stop.is_set():
+        return
+    try:
+        info = _startup_info()
+
+        def _druck():
+            with SessionLocal() as session:
+                hw_service.run_startup_receipt(session, info)
+
+        await asyncio.to_thread(_druck)
+    except Exception:  # pragma: no cover - Startbeleg darf Backend nie verhindern
+        pass
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
@@ -64,16 +157,20 @@ async def lifespan(_app: FastAPI):
 
     stop = asyncio.Event()
     worker = None
+    startup_receipt = None
     if os.environ.get("VK_PRINT_WORKER", "1") == "1":
         worker = asyncio.create_task(_druck_worker(stop))
+    startup_receipt = asyncio.create_task(_startup_receipt_task(stop))
     try:
         yield
     finally:
         stop.set()
-        if worker is not None:
-            worker.cancel()
+        for task in (worker, startup_receipt):
+            if task is None:
+                continue
+            task.cancel()
             try:
-                await worker
+                await task
             except (asyncio.CancelledError, Exception):
                 pass
 
@@ -94,6 +191,7 @@ app.include_router(profiles.router)
 app.include_router(catalog.router)
 app.include_router(sales.router)
 app.include_router(reports.router)
+app.include_router(analytics.router)
 app.include_router(print_queue_router.router)
 app.include_router(diagnostics.router)
 app.include_router(settings_router.router)

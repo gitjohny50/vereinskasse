@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type ActionResult, type Health, type PrinterStatus, type Setting, type UsbGeraet, type UsbListe } from "../api";
+import { api, type ActionResult, type BonLogoInfo, type Health, type PrinterStatus, type Setting, type UsbGeraet, type UsbListe } from "../api";
 
 type DotKind = "ok" | "warn" | "danger" | "unknown";
 
@@ -43,6 +43,7 @@ const SETTING_ORDER = [
   "drucker.encoding",
   "drucker.codepage_id",
   "bon.breite_zeichen",
+  "diagnose.testseite.qr_url",
   "schnitt.modus",
   "schnitt.vorschub_zeilen",
   "schublade.aktiv",
@@ -63,6 +64,7 @@ const LABELS: Record<string, string> = {
   "drucker.encoding": "Zeichenkodierung",
   "drucker.codepage_id": "Codepage-ID",
   "bon.breite_zeichen": "Bonbreite (Zeichen)",
+  "diagnose.testseite.qr_url": "Testseite: QR-Code-URL",
   "schnitt.modus": "Schnitt-Modus",
   "schnitt.vorschub_zeilen": "Schnitt: Vorschubzeilen",
   "schublade.aktiv": "Schublade aktiv",
@@ -71,6 +73,59 @@ const LABELS: Record<string, string> = {
   "schublade.pause_ms": "Schublade: Pause (ms)",
   "verkauf.beleg_autodruck": "Beleg automatisch drucken (1/0)",
 };
+
+interface RasterLogo {
+  raster_b64: string;
+  breite_px: number;
+  hoehe_px: number;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+async function svgToRasterLogo(file: File): Promise<RasterLogo> {
+  const svg = await file.text();
+  const imageUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("SVG konnte nicht gelesen werden."));
+      img.src = imageUrl;
+    });
+    const sourceWidth = image.naturalWidth || 384;
+    const sourceHeight = image.naturalHeight || 128;
+    const width = 384;
+    const height = Math.max(24, Math.min(240, Math.round((sourceHeight / sourceWidth) * width)));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas ist nicht verfügbar.");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(image, 0, 0, width, height);
+    const pixels = ctx.getImageData(0, 0, width, height).data;
+    const rowBytes = width / 8;
+    const raster = new Uint8Array(rowBytes * height);
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const offset = (y * width + x) * 4;
+        const alpha = pixels[offset + 3] / 255;
+        const luminance = 0.299 * pixels[offset] + 0.587 * pixels[offset + 1] + 0.114 * pixels[offset + 2];
+        if (alpha > 0.2 && luminance < 180) {
+          raster[y * rowBytes + Math.floor(x / 8)] |= 0x80 >> (x % 8);
+        }
+      }
+    }
+    return { raster_b64: bytesToBase64(raster), breite_px: width, hoehe_px: height };
+  } finally {
+    URL.revokeObjectURL(imageUrl);
+  }
+}
 
 export function Diagnose() {
   const [health, setHealth] = useState<Health | null>(null);
@@ -83,6 +138,9 @@ export function Diagnose() {
   const [drawerResult, setDrawerResult] = useState<ActionResult | null>(null);
   const [usbList, setUsbList] = useState<UsbListe | null>(null);
   const [usbBusy, setUsbBusy] = useState(false);
+  const [logo, setLogo] = useState<BonLogoInfo | null>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoResult, setLogoResult] = useState<string>("Noch kein Logo geladen.");
 
   async function refreshStatus() {
     try {
@@ -102,9 +160,18 @@ export function Diagnose() {
     }
   }
 
+  async function refreshLogo() {
+    try {
+      setLogo(await api.bonLogo());
+    } catch {
+      setLogo(null);
+    }
+  }
+
   useEffect(() => {
     refreshStatus();
     refreshSettings();
+    refreshLogo();
     const t = setInterval(refreshStatus, 8000);
     return () => clearInterval(t);
   }, []);
@@ -166,6 +233,34 @@ export function Diagnose() {
   async function uebernehmeUsb(g: UsbGeraet) {
     await saveSetting("drucker.usb.vendor_id", g.vendor_id);
     await saveSetting("drucker.usb.product_id", g.product_id);
+  }
+
+  async function logoEinlesen(file: File | null) {
+    if (!file) return;
+    setLogoBusy(true);
+    try {
+      const raster = await svgToRasterLogo(file);
+      const updated = await api.uploadBonLogo(raster.raster_b64, raster.breite_px, raster.hoehe_px);
+      setLogo(updated);
+      setLogoResult(`Logo gespeichert · ${updated.breite_px}×${updated.hoehe_px}px`);
+    } catch (e) {
+      setLogoResult(e instanceof Error ? e.message : "Logo konnte nicht gespeichert werden.");
+    } finally {
+      setLogoBusy(false);
+    }
+  }
+
+  async function logoEntfernen() {
+    setLogoBusy(true);
+    try {
+      const updated = await api.deleteBonLogo();
+      setLogo(updated);
+      setLogoResult("Logo entfernt.");
+    } catch (e) {
+      setLogoResult(e instanceof Error ? e.message : "Logo konnte nicht entfernt werden.");
+    } finally {
+      setLogoBusy(false);
+    }
   }
 
   const transport = settings.find((s) => s.schluessel === "drucker.transport")?.wert ?? "mock";
@@ -266,6 +361,38 @@ export function Diagnose() {
           </div>
         ))}
       </div>
+
+      <div className="section-title">Bon-Logo</div>
+      <section className="card">
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
+          <div>
+            <h2>SVG-Logo auf Beleg</h2>
+            <p>
+              {logo?.aktiv
+                ? `Aktiv · ${logo.breite_px}×${logo.hoehe_px}px`
+                : "Kein Logo auf dem Beleg aktiv."}
+            </p>
+          </div>
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            <label className={`btn btn-sm btn-primary file-btn ${logoBusy ? "disabled" : ""}`}>
+              {logoBusy ? "Verarbeite…" : "SVG einlesen"}
+              <input
+                type="file"
+                accept=".svg,image/svg+xml"
+                disabled={logoBusy}
+                onChange={(e) => {
+                  logoEinlesen(e.target.files?.[0] ?? null);
+                  e.currentTarget.value = "";
+                }}
+              />
+            </label>
+            <button className="btn btn-sm" disabled={logoBusy || !logo?.aktiv} onClick={logoEntfernen}>
+              Entfernen
+            </button>
+          </div>
+        </div>
+        <div className={`result ${logo?.aktiv ? "ok" : ""}`}>{logoResult}</div>
+      </section>
 
       {transport === "usb" && (
         <div className="card" style={{ marginTop: 12 }}>

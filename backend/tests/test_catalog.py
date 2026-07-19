@@ -33,6 +33,54 @@ def test_create_category_and_article_with_deposit(client):
     assert art["pfandzuordnungen"][0]["pfandart_id"] == pf["id"]
 
 
+def test_duplicate_category_name_rejected(client):
+    pid = _profil_id(client)
+    r1 = client.post("/api/kategorien", json={"kassenprofil_id": pid, "name": "Getränke Spezial"})
+    assert r1.status_code == 201
+    r2 = client.post("/api/kategorien", json={"kassenprofil_id": pid, "name": "  getränke   spezial  "})
+    assert r2.status_code == 409
+
+
+def test_update_category_color_and_reject_duplicate_rename(client):
+    pid = _profil_id(client)
+    a = client.post("/api/kategorien", json={"kassenprofil_id": pid, "name": "A", "farbe": "#111111"}).json()
+    b = client.post("/api/kategorien", json={"kassenprofil_id": pid, "name": "B", "farbe": "#222222"}).json()
+    r = client.put(f"/api/kategorien/{a['id']}", json={
+        "kassenprofil_id": pid, "name": "A", "farbe": "#abcdef", "symbol": "", "sortierung": 4, "aktiv": True,
+    })
+    assert r.status_code == 200
+    assert r.json()["farbe"] == "#abcdef"
+    assert r.json()["sortierung"] == 4
+    dup = client.put(f"/api/kategorien/{b['id']}", json={
+        "kassenprofil_id": pid, "name": "A", "farbe": "#222222", "symbol": "", "sortierung": 0, "aktiv": True,
+    })
+    assert dup.status_code == 409
+
+
+def test_delete_category_only_after_zabschluss_and_detaches_articles(client):
+    pid = _profil_id(client)
+    kat = client.post("/api/kategorien", json={"kassenprofil_id": pid, "name": "Nur kurz"}).json()
+    art = client.post("/api/artikel", json={
+        "kassenprofil_id": pid, "name": "Kurzartikel", "preis_cent": 100, "kategorie_id": kat["id"],
+    }).json()
+    zm = client.get("/api/zahlungsmethoden", params={"kassenprofil_id": pid}).json()[0]
+    client.post("/api/verkauf", json={
+        "kassenprofil_id": pid, "artikel": [{"artikel_id": art["id"], "menge": 1}], "zahlungsmethode_id": zm["id"],
+        "gegeben_cent": 100,
+    })
+
+    blocked = client.delete(f"/api/kategorien/{kat['id']}")
+    assert blocked.status_code == 409
+
+    client.post("/api/abschluss/z", json={"kassenprofil_id": pid})
+    deleted = client.delete(f"/api/kategorien/{kat['id']}")
+    assert deleted.status_code == 200
+    assert deleted.json()["name"] == "Nur kurz"
+    assert client.get(f"/api/artikel/{art['id']}").json()["kategorie_id"] is None
+    kategorien = client.get("/api/kategorien", params={"kassenprofil_id": pid}).json()
+    assert kat["id"] not in [k["id"] for k in kategorien]
+
+
 def test_price_stored_as_cents(client):
     pid = _profil_id(client)
     art = client.post("/api/artikel", json={"kassenprofil_id": pid, "name": "Bier", "preis_cent": 380}).json()
@@ -95,13 +143,86 @@ def test_reorder_sets_positions(client):
 def test_update_article_replaces_deposits(client):
     pid = _profil_id(client)
     pf = client.post("/api/pfandarten", json={"kassenprofil_id": pid, "name": "Kistenpfand", "betrag_cent": 500}).json()
+    kat = client.post("/api/kategorien", json={"kassenprofil_id": pid, "name": "Kisten"}).json()
     art = client.post("/api/artikel", json={"kassenprofil_id": pid, "name": "Kiste", "preis_cent": 900}).json()
     assert art["pfandzuordnungen"] == []
     upd = client.put(f"/api/artikel/{art['id']}", json={
+        "name": "Kiste groß",
+        "kategorie_id": kat["id"],
         "pfandzuordnungen": [{"pfandart_id": pf["id"], "menge_pro_einheit": 12}]
     }).json()
+    assert upd["name"] == "Kiste groß"
+    assert upd["kategorie_id"] == kat["id"]
     assert len(upd["pfandzuordnungen"]) == 1
     assert upd["pfandzuordnungen"][0]["menge_pro_einheit"] == 12
+
+
+def test_csv_import_creates_articles_with_category_and_deposit(client):
+    pid = _profil_id(client)
+    kat = client.post("/api/kategorien", json={"kassenprofil_id": pid, "name": "Import Getränke"}).json()
+    pf = client.post("/api/pfandarten", json={"kassenprofil_id": pid, "name": "Import Glas", "betrag_cent": 200}).json()
+    csv_text = "name;preis;kategorie;pfand;ticket;reihenfolge\nImport Wasser;2,00;Import Getränke;Import Glas:1;pro_stueck;7\n"
+
+    r = client.post("/api/artikel/csv-import", json={"kassenprofil_id": pid, "csv_text": csv_text, "delimiter": ";"})
+
+    assert r.status_code == 200
+    assert r.json()["angelegt"] == 1
+    rows = client.get("/api/artikel", params={"kassenprofil_id": pid}).json()
+    art = next(a for a in rows if a["name"] == "Import Wasser")
+    assert art["preis_cent"] == 200
+    assert art["kategorie_id"] == kat["id"]
+    assert art["sortierung"] == 7
+    assert art["pfandzuordnungen"][0]["pfandart_id"] == pf["id"]
+
+
+def test_csv_import_rejects_duplicate_inside_file_without_partial_import(client):
+    pid = _profil_id(client)
+    csv_text = "name;preis\nCSV A;1,00\nCSV A;2,00\n"
+
+    r = client.post("/api/artikel/csv-import", json={"kassenprofil_id": pid, "csv_text": csv_text, "delimiter": ";"})
+
+    assert r.status_code == 200
+    assert r.json()["angelegt"] == 0
+    assert "doppelt" in r.json()["fehler"][0]
+    rows = client.get("/api/artikel", params={"kassenprofil_id": pid}).json()
+    assert "CSV A" not in {a["name"] for a in rows}
+
+
+def test_csv_import_updates_archived_article_and_creates_missing_master_data(client):
+    pid = _profil_id(client)
+    art = client.post("/api/artikel", json={"kassenprofil_id": pid, "name": "CSV Alt", "preis_cent": 100}).json()
+    client.delete(f"/api/artikel/{art['id']}")
+    csv_text = "name;preis;kategorie;pfand;ticket\nCSV Alt;3,50;CSV Kategorie;CSV Pfand:2:1,50;kein\n"
+
+    r = client.post("/api/artikel/csv-import", json={"kassenprofil_id": pid, "csv_text": csv_text, "delimiter": ";"})
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["angelegt"] == 0
+    assert body["aktualisiert"] == 1
+    assert body["kategorien_angelegt"] == 1
+    assert body["pfandarten_angelegt"] == 1
+    rows = client.get("/api/artikel", params={"kassenprofil_id": pid}).json()
+    updated = next(a for a in rows if a["name"] == "CSV Alt")
+    assert updated["archiviert"] is False
+    assert updated["aktiv"] is True
+    assert updated["preis_cent"] == 350
+    assert updated["artikelticket_modus"] == "kein"
+    assert updated["pfandzuordnungen"][0]["menge_pro_einheit"] == 2
+
+
+def test_archive_all_and_reset_article_deposits(client):
+    pid = _profil_id(client)
+    r = client.post("/api/artikel/pfand-zuruecksetzen", params={"kassenprofil_id": pid})
+    assert r.status_code == 200
+    assert r.json()["anzahl"] >= 1
+    rows = client.get("/api/artikel", params={"kassenprofil_id": pid}).json()
+    assert all(a["pfandzuordnungen"] == [] for a in rows)
+
+    r2 = client.post("/api/artikel/alle-archivieren", params={"kassenprofil_id": pid})
+    assert r2.status_code == 200
+    assert r2.json()["anzahl"] >= 1
+    assert client.get("/api/artikel", params={"kassenprofil_id": pid}).json() == []
 
 
 def test_toggle_aktiv_via_full_put(client):

@@ -10,6 +10,8 @@ Sicherheitsregeln aus dem Lastenheft, die hier gelten:
 """
 from __future__ import annotations
 
+import base64
+import binascii
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
@@ -23,6 +25,7 @@ from ..models import (
     Verkauf,
 )
 from ..money import format_cents
+from ..timeutils import to_local
 from .escpos import EscposBuilder
 from .factory import DEFAULT_HW_SETTINGS, build_printer
 from .printer_base import PrinterStatus
@@ -62,6 +65,7 @@ def build_test_page(cfg: dict[str, str]) -> bytes:
     """Testseite: prüft Umlaute, Eurozeichen, Stile, QR und Schnitt (Lastenheft 29.1)."""
     b = _builder(cfg)
     b.init()
+    _print_logo_if_configured(b, cfg)
     b.align("center").bold(True).size(2, 2).line("VEREINSKASSE")
     b.size(1, 1).bold(False).line("Testseite - kein Verkauf").feed(1)
     b.align("left")
@@ -70,7 +74,9 @@ def build_test_page(cfg: dict[str, str]) -> bytes:
     b.bold(True).line("Fett: BEZAHLT").bold(False)
     b.size(2, 1).line("Doppelte Breite").size(1, 2).line("Doppelte Hoehe").size(1, 1)
     b.feed(1).align("center")
-    b.qr("https://vereinskasse.local/test", module_size=6)
+    qr_url = cfg.get("diagnose.testseite.qr_url", "").strip()
+    if qr_url:
+        b.qr(qr_url, module_size=6)
     b.feed(1).line("Zeit: " + datetime.now(timezone.utc).astimezone().strftime("%d.%m.%Y %H:%M:%S"))
     b.cut(mode=cfg.get("schnitt.modus", "partial"), feed_lines=int(cfg.get("schnitt.vorschub_zeilen", "3")))
     return b.build()
@@ -87,6 +93,54 @@ def build_cut_test(cfg: dict[str, str], count: int = 3) -> bytes:
         b.size(1, 1).bold(False).line("Schnitt-Test")
         b.cut(mode=mode, feed_lines=feed)
     return b.build()
+
+
+def build_startup_receipt(cfg: dict[str, str], info: dict[str, str | list[str]]) -> bytes:
+    """Startbeleg nach systemd/Backend-Start mit Netzwerk- und Betriebsdaten."""
+    width = int(cfg.get("bon.breite_zeichen", "42"))
+    urls = info.get("urls", [])
+    if not isinstance(urls, list):
+        urls = []
+    b = _builder(cfg)
+    b.init()
+    b.align("center").bold(True).size(1, 2).line("VEREINSKASSE").size(1, 1)
+    b.line("Backend gestartet").bold(False).feed(1)
+    b.align("left")
+    b.line("-" * width)
+    for label, key in [
+        ("Zeit:", "zeit"),
+        ("Host:", "hostname"),
+        ("User:", "user"),
+        ("Version:", "version"),
+        ("Profil:", "profil"),
+        ("Daten:", "data_dir"),
+        ("Drucker:", "drucker"),
+    ]:
+        value = str(info.get(key, "-"))
+        b.line(_zeile(label, value, width))
+    b.line("-" * width)
+    b.bold(True).line("Erreichbar unter:").bold(False)
+    if urls:
+        for url in urls:
+            b.line(str(url))
+    else:
+        b.line("Keine Netzwerkadresse gefunden")
+    b.line("-" * width)
+    b.align("center")
+    qr_url = str(urls[0]) if urls else ""
+    if qr_url:
+        b.qr(qr_url, module_size=5)
+    b.feed(1).line("Bereit fuer Verkauf")
+    b.cut(mode=cfg.get("schnitt.modus", "partial"), feed_lines=int(cfg.get("schnitt.vorschub_zeilen", "3")))
+    return b.build()
+
+
+def run_startup_receipt(session: Session, info: dict[str, str | list[str]], benutzer: str = "systemd") -> dict:
+    cfg = load_hw_settings(session)
+    printer = build_printer(cfg, mock_log_path=_mock_log_path(session))
+    result = printer.send(build_startup_receipt(cfg, info))
+    auftrag = _log(session, "Startbeleg", printer.name, result.ok, result.detail, benutzer)
+    return {"ok": result.ok, "detail": result.detail, "auftrag_id": auftrag.id, "drucker": printer.name}
 
 
 def build_drawer_pulse(cfg: dict[str, str]) -> bytes:
@@ -172,6 +226,18 @@ def _zeile(links: str, rechts: str, width: int) -> str:
     return links.ljust(platz) + rechts
 
 
+def _print_logo_if_configured(b: EscposBuilder, cfg: dict[str, str]) -> None:
+    if cfg.get("bon.logo.aktiv", "0") != "1":
+        return
+    try:
+        width_px = int(cfg.get("bon.logo.breite_px", "0"))
+        height_px = int(cfg.get("bon.logo.hoehe_px", "0"))
+        raster = base64.b64decode(cfg.get("bon.logo.raster_b64", ""), validate=True)
+        b.align("center").raster_image(width_px, height_px, raster).feed(1)
+    except (ValueError, binascii.Error):
+        return
+
+
 def build_receipt_bytes(
     cfg: dict[str, str], *, bonkopf: str, bonfuss: str, belegnummer: str, zeitpunkt: datetime,
     bediener: str, positionen: list[dict], waren_cent: int, pfand_cent: int, gesamt_cent: int,
@@ -181,6 +247,7 @@ def build_receipt_bytes(
     width = int(cfg.get("bon.breite_zeichen", "42"))
     b = _builder(cfg)
     b.init()
+    _print_logo_if_configured(b, cfg)
     b.align("center").bold(True).size(1, 2)
     for zeile in (bonkopf or "Vereinskasse").split("\n"):
         b.line(zeile)
@@ -190,7 +257,7 @@ def build_receipt_bytes(
     b.feed(1).align("left")
     b.line("-" * width)
     b.line(_zeile("Beleg-Nr:", belegnummer, width))
-    b.line(_zeile("Datum:", zeitpunkt.astimezone().strftime("%d.%m.%Y %H:%M"), width))
+    b.line(_zeile("Datum:", to_local(zeitpunkt).strftime("%d.%m.%Y %H:%M"), width))
     b.line(_zeile("Bediener:", bediener, width))
     b.line("-" * width)
     for p in positionen:
@@ -245,29 +312,30 @@ def build_tickets_bytes(cfg: dict[str, str], tickets: list[str], belegnummer: st
 
 
 def build_ticket_bytes(cfg: dict[str, str], bezeichnung: str, belegnummer: str, kopf: str = "") -> bytes:
-    """Ein einzelnes Artikelticket (für getrennte Druckaufträge je Artikel).
-    ``kopf`` erscheint klein über dem Artikelnamen (z. B. der Vereinsname)."""
+    """Ein einzelnes Artikelticket für getrennte Druckaufträge je Artikel.
+
+    ``kopf`` erscheint klein über dem Artikelnamen, z. B. Vereins- oder Veranstaltungsname.
+    """
     b = _builder(cfg)
     b.init()
     _ticket_block(b, cfg, bezeichnung, belegnummer, kopf)
     return b.build()
 
-
-def _ticket_block(b, cfg: dict[str, str], bezeichnung: str, belegnummer: str, kopf: str = "") -> None:
+def _ticket_block(b: EscposBuilder, cfg: dict[str, str], bezeichnung: str, belegnummer: str, kopf: str = "") -> None:
     mode = cfg.get("schnitt.modus", "partial")
     feed = int(cfg.get("schnitt.vorschub_zeilen", "3"))
-    # Jede Zeile setzt Ausrichtung, Größe und Fettdruck explizit, damit nichts von
-    # der vorigen Zeile "nachwirkt". Reihenfolge: Verein klein, Artikel groß, Beleg klein.
-    if kopf:
-        b.align("center").size(1, 1).bold(False).line(kopf)
-    # Artikelname deutlich größer (doppelte Breite und Höhe) und fett.
-    b.align("center").size(2, 2).bold(True).line(bezeichnung)
-    # Nach der großen Zeile ein Vorschub - sonst verschluckt der Drucker die
-    # ersten Zeichen der Folgezeile (das war die Ursache für "eg" statt "Beleg").
-    b.size(1, 1).bold(False).feed(1)
-    b.align("center").line(f"Beleg {belegnummer}")
-    b.cut(mode=mode, feed_lines=feed)
 
+    b.align("center")
+
+    for zeile in (kopf or "Vereinskasse").split("\n"):
+        if zeile.strip():
+            b.bold(False).size(1, 1).line(zeile.strip())
+
+    b.bold(True).size(2, 2).line(bezeichnung)
+    # Einige ESC/POS-Drucker verschlucken nach doppelter Hoehe sonst den Anfang der Folgezeile.
+    b.bold(False).size(1, 1).feed(1)
+    b.line(f"Beleg {belegnummer}")
+    b.cut(mode=mode, feed_lines=feed)
 
 def _pos_dicts(verkauf: Verkauf) -> list[dict]:
     return [
@@ -301,7 +369,7 @@ def build_bericht_bytes(cfg: dict[str, str], bericht: dict, profil_name: str) ->
     b.line("-" * width)
 
     def zeit(val) -> str:
-        return val.astimezone().strftime("%d.%m.%Y %H:%M") if isinstance(val, _dt) else "-"
+        return to_local(val).strftime("%d.%m.%Y %H:%M") if isinstance(val, _dt) else "-"
 
     if bericht.get("von"):
         b.line(_zeile("Von:", zeit(bericht["von"]), width))
