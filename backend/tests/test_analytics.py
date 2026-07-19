@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.database import SessionLocal
 from app.hardware.service import build_receipt_bytes
@@ -46,6 +46,35 @@ def test_verkaufs_auswertung_pfand_schalter(client):
     assert {i["bezeichnung"] for i in ohne["verkaeufe"][0]["items"]} == {"Wasser"}
     assert mit["gesamt_cent"] == 400
     assert {i["bezeichnung"] for i in mit["verkaeufe"][0]["items"]} == {"Wasser", "Pfand: Glaspfand"}
+
+
+def test_zeitreihe_liefert_lueckenlose_buckets_und_segmente(client):
+    pid, arts, zm = _kasse(client)
+    client.post("/api/verkauf", json={
+        "kassenprofil_id": pid,
+        "artikel": [{"artikel_id": arts["Cola"]["id"], "menge": 2}],
+        "zahlungsmethode_id": zm["Karte"]["id"],
+    })
+    heute = datetime.now().date()
+    morgen = heute + timedelta(days=1)
+
+    r = client.get("/api/auswertung/zeitreihe", params={
+        "kassenprofil_id": pid,
+        "von": f"{heute.isoformat()}T00:00:00",
+        "bis": f"{morgen.isoformat()}T00:00:00",
+        "granularitaet": "stunde",
+        "metrik": "umsatz",
+        "gruppierung": "artikel",
+        "pfand_einbeziehen": False,
+    })
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["summe"]["anzahl"] == 1
+    assert body["summe"]["umsatz_cent"] == 500
+    assert len(body["buckets"]) == 24
+    assert body["top_artikel"][0]["bezeichnung"] == "Cola"
+    assert any(seg["name"] == "Cola" for bucket in body["buckets"] for seg in bucket["segmente"])
 
 
 def test_auswertung_nur_admin_und_service(bediener_client):

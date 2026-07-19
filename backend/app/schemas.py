@@ -458,6 +458,47 @@ class VerkaufsAuswertungOut(BaseModel):
     verkaeufe: list[AuswertungVerkaufOut]
 
 
+class ZeitreiheSegmentOut(BaseModel):
+    schluessel: str
+    name: str
+    wert_cent: int = 0
+    anzahl: int = 0
+    menge: int = 0
+
+
+class ZeitreiheSummeOut(BaseModel):
+    umsatz_cent: int
+    anzahl: int
+    durchschnitt_cent: int
+    pfand_ausgegeben_cent: int
+    pfand_zurueck_cent: int
+    bar_cent: int
+    unbar_cent: int
+    menge: int
+
+
+class ZeitreiheBucketOut(BaseModel):
+    start: datetime
+    label: str
+    offset: int
+    gesamt_cent: int
+    anzahl: int
+    menge: int
+    segmente: list[ZeitreiheSegmentOut] = []
+
+
+class ZeitreiheOut(BaseModel):
+    von: datetime
+    bis: datetime
+    granularitaet: str
+    metrik: str
+    gruppierung: str
+    summe: ZeitreiheSummeOut
+    buckets: list[ZeitreiheBucketOut]
+    top_artikel: list[AuswertungItemOut]
+    verkaeufe: list[AuswertungVerkaufOut] = []
+
+
 # ===================================================================
 # Phase 4: Druckwarteschlange
 # ===================================================================

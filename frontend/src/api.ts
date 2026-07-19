@@ -118,6 +118,18 @@ export interface VerkaufsAuswertung {
   anzahl_verkaeufe: number; gesamt_cent: number;
   top_artikel: AuswertungItem[]; buckets: AuswertungBucket[]; verkaeufe: AuswertungVerkauf[];
 }
+export interface ZeitreiheSegment { schluessel: string; name: string; wert_cent: number; anzahl: number; menge: number; }
+export interface ZeitreiheSumme {
+  umsatz_cent: number; anzahl: number; durchschnitt_cent: number; pfand_ausgegeben_cent: number;
+  pfand_zurueck_cent: number; bar_cent: number; unbar_cent: number; menge: number;
+}
+export interface ZeitreiheBucket {
+  start: string; label: string; offset: number; gesamt_cent: number; anzahl: number; menge: number; segmente: ZeitreiheSegment[];
+}
+export interface Zeitreihe {
+  von: string; bis: string; granularitaet: string; metrik: string; gruppierung: string;
+  summe: ZeitreiheSumme; buckets: ZeitreiheBucket[]; top_artikel: AuswertungItem[]; verkaeufe: AuswertungVerkauf[];
+}
 export interface Druckauftrag {
   id: number; dokumenttyp: string; bezeichnung: string; drucker: string; status: string; versuche: number; max_versuche: number;
   letzte_fehlermeldung: string; nachdruck: boolean; verkauf_id: number | null; erstellt_am: string; aktualisiert_am: string;
@@ -218,6 +230,13 @@ export const api = {
   belegDrucken: (id: number) => req<ActionResult>(`/verkauf/${id}/beleg`, { method: "POST" }),
   verkaufsAuswertung: (pid: number, tage: number, pfand = false) =>
     req<VerkaufsAuswertung>(`/auswertung/verkauf?kassenprofil_id=${pid}&tage=${tage}&pfand=${pfand}`),
+  zeitreihe: (params: Record<string, string | number | boolean | null | undefined>) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== "") query.set(key, String(value));
+    });
+    return req<Zeitreihe>(`/auswertung/zeitreihe?${query.toString()}`);
+  },
 
   // Druckwarteschlange
   druckauftraege: (status?: string) => req<Druckauftrag[]>(`/druckwarteschlange${status ? `?status=${encodeURIComponent(status)}` : ""}`),
