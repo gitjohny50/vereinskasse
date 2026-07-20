@@ -37,17 +37,19 @@ jobs:
       - name: Run tests and generate coverage report
         run: pytest --cov=app --cov-report=xml
 
+      # 7. Security Lab: SBOM generieren
       - name: Generate SBOM (Syft)
         uses: anchore/sbom-action@v0
         with:
           format: cyclonedx-json
-          output-file: ${{ runner.temp }}/backend-sbom.json
+          output-file: ${{ runner.temp }}/backend.cdx.json
 
+      # 8. Security Lab: SBOM scannen (Direkter Download des Binaries)
       - name: Scan SBOM (OSV Scanner)
         run: |
           curl -sL https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 -o osv-scanner
           chmod +x osv-scanner
-          ./osv-scanner --sbom=${{ runner.temp }}/backend-sbom.json
+          ./osv-scanner -L ${{ runner.temp }}/backend.cdx.json
 
   ####################
   #   FRONTEND JOB   #
@@ -79,14 +81,16 @@ jobs:
       - name: Build project
         run: npm run build
 
+      # 6. Security Lab: SBOM generieren
       - name: Generate SBOM (Syft)
         uses: anchore/sbom-action@v0
         with:
           format: cyclonedx-json
-          output-file: ${{ runner.temp }}/frontend-sbom.json
+          output-file: ${{ runner.temp }}/frontend.cdx.json
           
+      # 7. Security Lab: SBOM scannen (Direkter Download des Binaries)
       - name: Scan SBOM (OSV Scanner)
         run: |
           curl -sL https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 -o osv-scanner
           chmod +x osv-scanner
-          ./osv-scanner --sbom=${{ runner.temp }}/frontend-sbom.json
+          ./osv-scanner -L ${{ runner.temp }}/frontend.cdx.json
