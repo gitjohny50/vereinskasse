@@ -1,8 +1,6 @@
-Hier ist deine vollständige, aktualisierte Markdown-Dokumentation. Ich habe einen neuen Abschnitt **„Datenbank-Handling in der CI (SQLite)“** direkt vor den geplanten Erweiterungen eingefügt.
+Hier ist die aktualisierte Version deiner Markdown-Dokumentation. Ich habe den neuen SAST-Job (CodeQL) unter der **Übersicht der Jobs** hinzugefügt, ihn als eigene **Pipeline-Sektion** im Detail beschrieben und ihn konsequenterweise aus den **Geplanten Erweiterungen (Future Work)** entfernt, da er nun fester Bestandteil deines Projekts ist.
 
-Dort ist genau dokumentiert, warum wir aktuell den Weg über das `/tmp`-Verzeichnis gehen (Möglichkeit A) und wie du es später mit einer kleinen Code-Änderung auf die extrem schnelle In-Memory-Lösung (Möglichkeit B) umbauen kannst.
-
-Kopiere dir einfach diesen kompletten Block:
+Kopiere einfach diesen kompletten Block:
 
 ---
 
@@ -21,10 +19,11 @@ Die Pipeline wird automatisch in den folgenden Fällen gestartet:
 
 ## Übersicht der Jobs
 
-Die Pipeline besteht aus zwei unabhängigen Jobs, die parallel ausgeführt werden, um die Durchlaufzeit zu verkürzen:
+Die Pipeline besteht aus drei unabhängigen Jobs, die parallel ausgeführt werden, um die Durchlaufzeit zu verkürzen:
 
-1. `backend-ci`: Überprüft das Python-Backend und scannt nach Schwachstellen.
-2. `frontend-ci`: Überprüft das TypeScript/React-Frontend und scannt nach Schwachstellen.
+1. `backend-ci`: Überprüft das Python-Backend und scannt nach Schwachstellen in den Abhängigkeiten.
+2. `frontend-ci`: Überprüft das TypeScript/React-Frontend und scannt nach Schwachstellen in den Abhängigkeiten.
+3. `security-sast`: Führt statische Code-Analysen (SAST) mit GitHub CodeQL durch, um logische Sicherheitslücken im eigenen Quellcode aufzudecken.
 
 Wenn einer dieser Jobs fehlschlägt, wird der gesamte Pipeline-Lauf als fehlgeschlagen markiert.
 
@@ -62,6 +61,19 @@ Dieser Job validiert den Frontend-Code, prüft die NPM-Abhängigkeiten auf Siche
 
 ---
 
+## SAST-Pipeline (`security-sast`)
+
+Dieser Job führt das Static Application Security Testing (SAST) durch. Während der OSV-Scanner in den Backend- und Frontend-Jobs Fremdpakete auf Schwachstellen prüft, analysiert **GitHub CodeQL** hier den *selbstgeschriebenen* Quellcode auf logische Sicherheitslücken (z.B. Injection-Gefahren) und architektonische Fehler.
+
+**Schritte im Detail:**
+
+1. **Code auschecken:** Lädt die aktuellste Version des Codes in die virtuelle Umgebung von GitHub.
+2. **CodeQL initialisieren:** Konfiguriert das CodeQL-Analyse-Tool. Über eine Matrix-Strategie wird der Job parallel für alle relevanten Sprachen (`python` für das Backend und `javascript` für das TypeScript-Frontend) aufgesetzt.
+3. **Autobuild:** Ein Standard-Schritt von CodeQL, der bei kompilierten Sprachen den Build-Prozess anstößt.
+4. **Analyse durchführen:** Führt die eigentliche CodeQL-Sicherheitsprüfung aus. Die Ergebnisse werden automatisch hochgeladen und direkt im "Security"-Reiter des GitHub-Repositories sowie in den Pull Requests angezeigt.
+
+---
+
 ## Datenbank-Handling in der CI (SQLite)
 
 Das Projekt verwendet SQLite als Datenbank. Da die Tests in der Cloud-Pipeline isoliert ablaufen sollen, muss sichergestellt werden, dass keine Konflikte mit Produktionsdaten entstehen.
@@ -81,6 +93,7 @@ Um die Tests noch performanter zu machen, kann die Architektur zukünftig auf ei
 **So wird die Umstellung durchgeführt:**
 
 1. **Code-Anpassung (`config.py`):** Die Eigenschaft `db_url` muss so angepasst werden, dass sie das vollständige Überschreiben der URL zulässt:
+
 ```python
 @property
 def db_url(self) -> str:
@@ -91,15 +104,13 @@ def db_url(self) -> str:
 
 ```
 
-
 2. **Pipeline-Anpassung (`ci.yml`):** Der Test-Schritt wird anschließend von `VK_DATA_DIR: /tmp` auf die explizite URL-Variable geändert:
+
 ```yaml
 env:
   DATABASE_URL: "sqlite:///:memory:"
 
 ```
-
-
 
 ---
 
@@ -136,12 +147,7 @@ Um die CI/CD-Pipeline in Zukunft noch robuster und näher an der Produktionsumge
 * **Zusammenspiel testen:** Starten von Frontend, Backend und Datenbank in der CI, um echte Klickpfade von Benutzern im Browser zu simulieren.
 * **Vorteil:** Stellt sicher, dass nicht nur isolierte Funktionen (Unit-Tests), sondern das gesamte System im Zusammenspiel fehlerfrei funktioniert.
 
-### 6. Static Application Security Testing (SAST)
-
-* **Erweiterte Code-Analyse:** Einbindung von Tools wie *GitHub CodeQL* oder *SonarQube*.
-* **Vorteil:** Während der aktuelle OSV-Scanner Fremdpakete auf Schwachstellen prüft, scannen SAST-Tools deinen *selbstgeschriebenen* Quellcode auf logische Sicherheitslücken (z.B. SQL-Injections) und Architekturfehler, die über einfaches Linting hinausgehen.
-
-### 7. Hardware-Integration & Hardware-in-the-Loop (HIL)
+### 6. Hardware-Integration & Hardware-in-the-Loop (HIL)
 
 * **Drucker-Simulation (Mocking):** Erweiterung der Backend-Tests (`pytest`), um die `pyusb`-Aufrufe zu simulieren. So wird die Kassenlogik für den USB-Bondrucker in der Cloud-CI getestet, ohne dass physische Hardware angeschlossen sein muss.
 * **Physische Hardware-Tests (HIL):** Nutzung eines Self-Hosted Runners (Raspberry Pi) mit lokal angeschlossenem USB-Bondrucker. Die Pipeline kann so konfiguriert werden, dass sie nach erfolgreichem Deployment verifiziert, ob die `libusb`-Abhängigkeiten sowie die `udev`-Rechte korrekt gesetzt sind, und automatisiert eine Testseite druckt.

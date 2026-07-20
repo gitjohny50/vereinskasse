@@ -95,3 +95,41 @@ jobs:
 
       - name: Build project
         run: npm run build
+
+  ####################
+  #    SAST JOB      #
+  ####################
+  security-sast:
+    name: CodeQL Security Scan
+    runs-on: ubuntu-latest
+    
+    # Erforderlich, damit CodeQL Ergebnisse in den GitHub Security Tab schreiben kann
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    # Führt den Job einmal für Python und einmal für JS/TS aus
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'python', 'javascript' ]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+
+      # Automatisiertes Bauen (relevant für kompilierte Sprachen/Frameworks)
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      # Führt die eigentliche Analyse durch und lädt die Ergebnisse hoch
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{matrix.language}}"
