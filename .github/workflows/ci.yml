@@ -1,10 +1,5 @@
-
-# .github/workflows/ci.yml
-
 name: CI Pipeline
 
-# Die Pipeline wird bei jedem Push und Merge auf die Branches 'main' und 'dev'
-# sowie bei jedem Pull Request, der auf diese Branches zielt, automatisch gestartet.
 on:
   push:
     branches: [ main, dev, cicd-pipeline ]
@@ -31,7 +26,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12' # Passe die Version bei Bedarf an
+          python-version: '3.12' 
 
       # 3. Python-Abhängigkeiten installieren (inkl. Test-Tools)
       - name: Install dependencies
@@ -48,12 +43,12 @@ jobs:
         run: pytest --cov=app --cov-report=xml
 
       # 6. Coverage-Bericht zu Codecov.io hochladen
-      #    (Benötigt ein CODECOV_TOKEN in den GitHub Secrets)
+      #    (Auskommentiert, bis das Token gesetzt ist)
       #- name: Upload coverage to Codecov
       #  uses: codecov/codecov-action@v4
       #  with:
       #    token: ${{ secrets.CODECOV_TOKEN }}
-      #    files: ./backend/coverage.xml # Pfad zur Coverage-Datei
+      #    files: ./backend/coverage.xml
       #    fail_ci_if_error: true
 
       # 7. Security Lab: SBOM generieren
@@ -63,11 +58,12 @@ jobs:
           format: cyclonedx-json
           output-file: ${{ runner.temp }}/backend-sbom.json
 
-      # 8. Security Lab: SBOM scannen
+      # 8. Security Lab: SBOM scannen (Direkter Download des Binaries)
       - name: Scan SBOM (OSV Scanner)
-        uses: google/osv-scanner-action@v1
-        with:
-          sbom: ${{ runner.temp }}/backend-sbom.json
+        run: |
+          curl -sL https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 -o osv-scanner
+          chmod +x osv-scanner
+          ./osv-scanner --sbom=${{ runner.temp }}/backend-sbom.json
 
   ####################
   #   FRONTEND JOB   #
@@ -88,21 +84,19 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20' # Passe die Version bei Bedarf an
+          node-version: '20' 
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
       # 3. Frontend-Abhängigkeiten installieren
-      #    'npm ci' ist schneller und sicherer für CI als 'npm install'
       - name: Install dependencies
         run: npm ci
 
       # 4. Code-Stil mit ESLint prüfen
-      #    (Setzt voraus, dass ein 'lint'-Skript in package.json existiert)
       - name: Lint with ESLint
         run: npm run lint
 
-      # 5. Frontend-Build ausführen, um Fehler zu finden
+      # 5. Frontend-Build ausführen
       - name: Build project
         run: npm run build
 
@@ -113,9 +107,9 @@ jobs:
           format: cyclonedx-json
           output-file: ${{ runner.temp }}/frontend-sbom.json
           
-
-      # 7. Security Lab: SBOM scannen
+      # 7. Security Lab: SBOM scannen (Direkter Download des Binaries)
       - name: Scan SBOM (OSV Scanner)
-        uses: google/osv-scanner-action@v1
-        with:
-          sbom: ${{ runner.temp }}/frontend-sbom.json
+        run: |
+          curl -sL https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 -o osv-scanner
+          chmod +x osv-scanner
+          ./osv-scanner --sbom=${{ runner.temp }}/frontend-sbom.json
