@@ -13,7 +13,6 @@ from .. import sales
 from .. import print_queue
 from ..auth import require_bediener
 from ..database import get_session
-from ..hardware import service as hw
 from ..models import Benutzer, Verkauf
 from ..timeutils import as_utc
 from ..schemas import (

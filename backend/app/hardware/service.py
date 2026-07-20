@@ -18,9 +18,7 @@ from sqlalchemy.orm import Session
 
 from ..models import (
     AuditLog,
-    Benutzer,
     Druckauftrag,
-    Kassenprofil,
     Systemeinstellung,
     Verkauf,
 )
