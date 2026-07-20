@@ -18,7 +18,6 @@ from sqlalchemy.orm import Session
 
 from . import models
 from . import print_queue
-from .hardware import service as hw
 
 
 def _now() -> datetime:

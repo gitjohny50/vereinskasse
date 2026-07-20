@@ -13,7 +13,6 @@ bei jeder neuen Verbindung.
 from __future__ import annotations
 
 from sqlalchemy import create_engine, event, text
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from .config import settings

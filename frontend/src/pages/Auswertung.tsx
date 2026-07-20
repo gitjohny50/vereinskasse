@@ -1,8 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import {
-  api, ApiError, formatCents,
-  type AuswertungVerkauf, type Kassenprofil, type Zeitreihe, type ZeitreiheBucket,
-} from "../api";
+import { useEffect, useMemo, useState, useCallback } from "react";
+import { api, ApiError, formatCents, type AuswertungBucket, type Kassenprofil, type VerkaufsAuswertung } from "../api";
 
 type Granularitaet = "stunde" | "tag" | "woche";
 type Metrik = "umsatz" | "anzahl" | "menge";
@@ -246,10 +243,7 @@ export function Auswertung({ profil }: { profil: Kassenprofil }) {
   const [vergleich, setVergleich] = useState<Zeitreihe | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
 
-  const rangeA = useRange(bereich, granularitaet, offset, customVon, customBis);
-  const rangeB = useRange(bereich, granularitaet, offset + vergleichOffset, customVon, customBis);
-
-  async function laden() {
+  const laden = useCallback(async () => {
     setFehler(null);
     const params = {
       kassenprofil_id: profil.id,
@@ -272,14 +266,23 @@ export function Auswertung({ profil }: { profil: Kassenprofil }) {
     } catch (e) {
       setFehler(e instanceof ApiError ? e.message : "Auswertung konnte nicht geladen werden.");
     }
-  }
+  }, [profil.id, tage, pfand]);
 
-  useEffect(() => { laden(); }, [profil.id, granularitaet, bereich, offset, customVon, customBis, metrik, gruppierung, pfand, vergleichAktiv, vergleichOffset]);
+  useEffect(() => { laden(); }, [laden]);
 
-  const rows = useMemo(() => ranking(daten, gruppierung), [daten, gruppierung]);
-  const maxRank = Math.max(1, ...rows.map((r) => r.wert));
-  const verkaeufe: AuswertungVerkauf[] = selectedName
-    ? (daten?.verkaeufe ?? []).filter((v) => v.items.some((i) => i.bezeichnung === selectedName))
+  useEffect(() => {
+    if (daten && selectedItem && !daten.top_artikel.some((i) => i.bezeichnung === selectedItem)) {
+      setSelectedItem(null);
+    }
+  }, [daten, selectedItem]);
+
+  const durchschnitt = useMemo(() => {
+    if (!daten || daten.anzahl_verkaeufe === 0) return 0;
+    return Math.round(daten.gesamt_cent / daten.anzahl_verkaeufe);
+  }, [daten]);
+  
+  const gefilterteVerkaeufe = selectedItem
+    ? (daten?.verkaeufe ?? []).filter((v) => v.items.some((i) => i.bezeichnung === selectedItem))
     : daten?.verkaeufe ?? [];
 
   function setRange(b: Bereich) {

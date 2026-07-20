@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { api, ApiError, type Benutzer as B, type Rolle } from "../api";
 
 export function Benutzer() {
@@ -10,14 +10,17 @@ export function Benutzer() {
   const [rolleId, setRolleId] = useState<number | "">("");
   const [pinReset, setPinReset] = useState<{ id: number; pin: string } | null>(null);
 
-  async function laden() {
+  const laden = useCallback(async () => {
     const [bs, rs] = await Promise.all([api.benutzer(), api.rollen()]);
-    setListe(bs); setRollen(rs);
-    if (rolleId === "" && rs.length) setRolleId(rs[0].id);
-  }
+    setListe(bs); 
+    setRollen(rs);
+    // Funktionale State-Aktualisierung, um rolleId nicht als Dependency zu benötigen
+    setRolleId((prev) => (prev === "" && rs.length > 0 ? rs[0].id : prev));
+  }, []);
+
   useEffect(() => {
     laden().catch((e) => setFehler(e instanceof ApiError ? e.message : "Fehler beim Laden."));
-  }, []);
+  }, [laden]);
 
   async function anlegen() {
     if (!name.trim()) { setFehler("Name fehlt."); return; }
