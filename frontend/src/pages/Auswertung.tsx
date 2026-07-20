@@ -1,5 +1,37 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { api, ApiError, formatCents, type AuswertungBucket, type Kassenprofil, type VerkaufsAuswertung } from "../api";
+import { api, ApiError, formatCents, type Kassenprofil } from "../api";
+
+export interface ZeitreiheBucket {
+  start: string;
+  label: string;
+  gesamt_cent: number;
+  anzahl: number;
+  menge: number;
+  segmente: { schluessel: string; name: string; wert_cent: number; anzahl: number; menge: number }[];
+}
+
+export interface Zeitreihe {
+  summe: {
+    umsatz_cent: number;
+    anzahl: number;
+    menge: number;
+    durchschnitt_cent: number;
+    pfand_ausgegeben_cent: number;
+    pfand_zurueck_cent: number;
+    bar_cent: number;
+    unbar_cent: number;
+  };
+  buckets: ZeitreiheBucket[];
+  top_artikel: { bezeichnung: string; menge: number; umsatz_cent: number }[];
+  verkaeufe: {
+    id: number;
+    zeitpunkt: string;
+    belegnummer: string;
+    zahlung: string;
+    gesamt_cent: number;
+    items: { bezeichnung: string; menge: number }[];
+  }[];
+}
 
 type Granularitaet = "stunde" | "tag" | "woche";
 type Metrik = "umsatz" | "anzahl" | "menge";
@@ -243,6 +275,9 @@ export function Auswertung({ profil }: { profil: Kassenprofil }) {
   const [vergleich, setVergleich] = useState<Zeitreihe | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
 
+  const rangeA = useRange(bereich, granularitaet, offset, customVon, customBis);
+  const rangeB = useRange(bereich, granularitaet, offset + vergleichOffset, customVon, customBis);
+
   const laden = useCallback(async () => {
     setFehler(null);
     const params = {
@@ -256,35 +291,34 @@ export function Auswertung({ profil }: { profil: Kassenprofil }) {
       ausrichtung: vergleichAktiv ? "relativ" : "absolut",
     };
     try {
-      const a = await api.zeitreihe(params);
+      const a = await (api as any).zeitreihe(params);
       setDaten(a);
       if (vergleichAktiv) {
-        setVergleich(await api.zeitreihe({ ...params, von: isoLocal(rangeB.von), bis: isoLocal(rangeB.bis), ausrichtung: "relativ" }));
+        setVergleich(await (api as any).zeitreihe({ ...params, von: isoLocal(rangeB.von), bis: isoLocal(rangeB.bis), ausrichtung: "relativ" }));
       } else {
         setVergleich(null);
       }
     } catch (e) {
       setFehler(e instanceof ApiError ? e.message : "Auswertung konnte nicht geladen werden.");
     }
-  }, [profil.id, tage, pfand]);
+  }, [profil.id, rangeA, rangeB, granularitaet, metrik, gruppierung, pfand, vergleichAktiv]);
 
   useEffect(() => {
     laden();
   }, [laden]);
 
   useEffect(() => {
-    if (daten && selectedItem && !daten.top_artikel.some((i) => i.bezeichnung === selectedItem)) {
-      setSelectedItem(null);
+    if (daten && selectedKey && !daten.top_artikel.some((i) => i.bezeichnung === selectedKey) && !daten.buckets.some(b => b.segmente.some(s => s.schluessel === selectedKey))) {
+      setSelectedKey(null);
+      setSelectedName(null);
     }
-  }, [daten, selectedItem]);
+  }, [daten, selectedKey]);
 
-  const durchschnitt = useMemo(() => {
-    if (!daten || daten.anzahl_verkaeufe === 0) return 0;
-    return Math.round(daten.gesamt_cent / daten.anzahl_verkaeufe);
-  }, [daten]);
-  
-  const gefilterteVerkaeufe = selectedItem
-    ? (daten?.verkaeufe ?? []).filter((v) => v.items.some((i) => i.bezeichnung === selectedItem))
+  const rows = useMemo(() => ranking(daten, gruppierung), [daten, gruppierung]);
+  const maxRank = Math.max(1, ...rows.map((r) => r.wert));
+
+  const verkaeufe = selectedKey
+    ? (daten?.verkaeufe ?? []).filter((v) => v.items.some((i) => i.bezeichnung === selectedName || i.bezeichnung === selectedKey))
     : daten?.verkaeufe ?? [];
 
   function setRange(b: Bereich) {
