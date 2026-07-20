@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { api, ApiError, formatCents, type AuswertungBucket, type Kassenprofil, type VerkaufsAuswertung } from "../api";
 
 const COLORS = ["#6366f1", "#2563eb", "#b45309", "#7c3aed", "#be123c", "#0ea5e9", "#c2410c", "#475569"];
@@ -96,16 +96,19 @@ export function Auswertung({ profil }: { profil: Kassenprofil }) {
   const [daten, setDaten] = useState<VerkaufsAuswertung | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
 
-  async function laden() {
+  const laden = useCallback(async () => {
     setFehler(null);
     try {
       setDaten(await api.verkaufsAuswertung(profil.id, tage, pfand));
     } catch (e) {
       setFehler(e instanceof ApiError ? e.message : "Auswertung konnte nicht geladen werden.");
     }
-  }
+  }, [profil.id, tage, pfand]);
 
-  useEffect(() => { laden(); }, [profil.id, tage, pfand]);
+  useEffect(() => {
+    laden();
+  }, [laden]);
+
   useEffect(() => {
     if (daten && selectedItem && !daten.top_artikel.some((i) => i.bezeichnung === selectedItem)) {
       setSelectedItem(null);
@@ -116,6 +119,7 @@ export function Auswertung({ profil }: { profil: Kassenprofil }) {
     if (!daten || daten.anzahl_verkaeufe === 0) return 0;
     return Math.round(daten.gesamt_cent / daten.anzahl_verkaeufe);
   }, [daten]);
+  
   const gefilterteVerkaeufe = selectedItem
     ? (daten?.verkaeufe ?? []).filter((v) => v.items.some((i) => i.bezeichnung === selectedItem))
     : daten?.verkaeufe ?? [];
