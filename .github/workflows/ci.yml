@@ -7,84 +7,62 @@ on:
     branches: [ main, dev, cicd-pipline ]
 
 jobs:
-  ###################
-  #   BACKEND JOB   #
-  ###################
   backend-ci:
     runs-on: ubuntu-latest
-    
     defaults:
       run:
         working-directory: ./backend
-
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12' 
-
+          python-version: '3.12'
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
           pip install pytest pytest-cov ruff
-
       - name: Lint with ruff
         run: ruff check app/ tests/
-
       - name: Run tests and generate coverage report
         run: pytest --cov=app --cov-report=xml
-
       - name: Generate SBOM (Syft)
         uses: anchore/sbom-action@v0
         with:
           format: cyclonedx-json
           output-file: ${{ runner.temp }}/backend-sbom.json
-
       - name: Scan SBOM (OSV Scanner)
         run: |
           curl -sL https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 -o osv-scanner
           chmod +x osv-scanner
           ./osv-scanner --sbom=${{ runner.temp }}/backend-sbom.json
 
-  ####################
-  #   FRONTEND JOB   #
-  ####################
   frontend-ci:
     runs-on: ubuntu-latest
-
     defaults:
       run:
         working-directory: ./frontend
-
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20' 
+          node-version: '20'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
-
       - name: Install dependencies
         run: npm ci
-
       - name: Lint with ESLint
         run: npm run lint
-
       - name: Build project
         run: npm run build
-
       - name: Generate SBOM (Syft)
         uses: anchore/sbom-action@v0
         with:
           format: cyclonedx-json
           output-file: ${{ runner.temp }}/frontend-sbom.json
-          
       - name: Scan SBOM (OSV Scanner)
         run: |
           curl -sL https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 -o osv-scanner
