@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { api, ApiError, type Kassenprofil, type Zahlungsmethode } from "../api";
 
 export function Zahlungsmethoden({ profil }: { profil: Kassenprofil }) {
@@ -10,11 +10,14 @@ export function Zahlungsmethoden({ profil }: { profil: Kassenprofil }) {
   const [rueckgeld, setRueckgeld] = useState(true);
   const [negativ, setNegativ] = useState(false);
 
-  async function laden() { setListe(await api.zahlungsmethoden(profil.id)); }
+  const laden = useCallback(async () => { 
+    setListe(await api.zahlungsmethoden(profil.id)); 
+  }, [profil.id]);
+
   useEffect(() => {
     setFehler(null);
     laden().catch((e) => setFehler(e instanceof ApiError ? e.message : "Fehler beim Laden."));
-  }, [profil.id]);
+  }, [laden]);
 
   function body(z: Zahlungsmethode) {
     return {

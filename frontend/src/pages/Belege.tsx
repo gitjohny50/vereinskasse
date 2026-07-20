@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { api, ApiError, formatCents, type Kassenprofil, type Verkauf } from "../api";
 
 export function Belege({ profil }: { profil: Kassenprofil }) {
@@ -7,11 +7,13 @@ export function Belege({ profil }: { profil: Kassenprofil }) {
   const [offen, setOffen] = useState<number | null>(null);
   const [hinweis, setHinweis] = useState<string | null>(null);
 
-  async function laden() { setListe(await api.verkaeufe(profil.id)); }
+  const laden = useCallback(async () => {
+    setListe(await api.verkaeufe(profil.id));
+  }, [profil.id]);
   useEffect(() => {
     setFehler(null);
     laden().catch((e) => setFehler(e instanceof ApiError ? e.message : "Fehler beim Laden."));
-  }, [profil.id]);
+  }, [laden]);
 
   async function nachdruck(id: number, beleg: string) {
     setHinweis(null);
