@@ -44,6 +44,7 @@ def test_settings_roundtrip(client):
     assert r.status_code == 200
     keys = {row["schluessel"] for row in r.json()}
     assert "drucker.transport" in keys
+    assert "artikelticket.vorschub_zeilen" in keys
 
     r2 = client.put("/api/einstellungen/schnitt.modus", json={"wert": "full"})
     assert r2.status_code == 200

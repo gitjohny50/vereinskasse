@@ -34,6 +34,7 @@ DEFAULT_HW_SETTINGS: dict[str, str] = {
     # Schnitt (Lastenheft 14.6)
     "schnitt.modus": "partial",           # partial | full | none
     "schnitt.vorschub_zeilen": "3",
+    "artikelticket.vorschub_zeilen": "0",
     # Kassenschublade (Lastenheft 13.3)
     "schublade.aktiv": "1",
     "schublade.pin": "0",                 # 0 = Pin 2, 1 = Pin 5

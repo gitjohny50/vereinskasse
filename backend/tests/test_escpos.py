@@ -51,9 +51,18 @@ def test_qr_has_store_and_print_blocks():
     assert payload.endswith(bytes([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]))
 
 
-def test_ticket_feeds_after_large_article_line_before_receipt_number():
-    payload = build_ticket_bytes({}, "Wasser", "000030", kopf="Musikverein Leutenbach")
-    assert b"\x1d\x21\x11Wasser\x1b\x64\x01\x1b\x45\x00\x1d\x21\x00\x1b\x64\x01Beleg 000030" in payload
+def test_ticket_uses_compact_event_layout_with_time_without_price():
+    payload = build_ticket_bytes({"artikelticket.vorschub_zeilen": "0"}, "Wasser", "000030", kopf="Musikverein Leutenbach\nHocketse 20.07.2026 14:35")
+    assert b"Musikverein Leutenbach" in payload
+    assert b"Hocketse 20.07.2026 14:35" in payload
+    assert b"\x1d\x21\x11Wasser" in payload
+    assert b"EUR" not in payload
+    assert b"Kasse 000030" not in payload
+    assert b"-000030-" in payload
+    assert b"Hocketse 20.07.2026 14:35  -000030-" in payload
+    assert payload.index(b"Musikverein Leutenbach") < payload.index(b"Wasser") < payload.index(b"Hocketse 20.07.2026 14:35  -000030-")
+    # Der Papierschnitt (b'\x1d\x56\x42\x00') ist jetzt erwünscht, daher wurde die Prüfung auf 'not in' entfernt.
+    assert payload.endswith(b"\x1d\x56\x42\x00")
 
 
 def test_raster_image_uses_gs_v_0_command():

@@ -25,7 +25,8 @@ class Base(DeclarativeBase):
 engine = create_engine(
     settings.db_url,
     # check_same_thread=False, weil FastAPI Requests aus einem Threadpool bedient.
-    connect_args={"check_same_thread": False},
+    # timeout=15.0 hilft gegen "database is locked" bei hoher Parallelität.
+    connect_args={"check_same_thread": False, "timeout": 15.0},
     future=True,
 )
 
@@ -37,7 +38,8 @@ def _set_sqlite_pragmas(dbapi_connection, _connection_record):
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
-    cursor.execute("PRAGMA busy_timeout=5000")
+    # Busy Timeout auf 15000 ms (15s) erhöht, damit Operationen auf gelockte DB warten
+    cursor.execute("PRAGMA busy_timeout=15000")
     cursor.close()
 
 
