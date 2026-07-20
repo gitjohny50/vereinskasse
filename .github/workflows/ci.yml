@@ -37,14 +37,12 @@ jobs:
       - name: Run tests and generate coverage report
         run: pytest --cov=app --cov-report=xml
 
-      # 7. Security Lab: SBOM generieren
       - name: Generate SBOM (Syft)
         uses: anchore/sbom-action@v0
         with:
           format: cyclonedx-json
           output-file: ${{ runner.temp }}/backend.cdx.json
 
-      # 8. Security Lab: SBOM scannen (Direkter Download des Binaries)
       - name: Scan SBOM (OSV Scanner)
         run: |
           curl -sL https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 -o osv-scanner
@@ -65,6 +63,20 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
+      # SBOM Generierung und Scan VOR der Paket-Installation (Umgeht node_modules)
+      - name: Generate SBOM (Syft)
+        uses: anchore/sbom-action@v0
+        with:
+          format: cyclonedx-json
+          output-file: ${{ runner.temp }}/frontend.cdx.json
+          
+      - name: Scan SBOM (OSV Scanner)
+        run: |
+          curl -sL https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 -o osv-scanner
+          chmod +x osv-scanner
+          ./osv-scanner -L ${{ runner.temp }}/frontend.cdx.json
+
+      # Danach ganz normal das Projekt aufsetzen und bauen
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -80,17 +92,3 @@ jobs:
 
       - name: Build project
         run: npm run build
-
-      # 6. Security Lab: SBOM generieren
-      - name: Generate SBOM (Syft)
-        uses: anchore/sbom-action@v0
-        with:
-          format: cyclonedx-json
-          output-file: ${{ runner.temp }}/frontend.cdx.json
-          
-      # 7. Security Lab: SBOM scannen (Direkter Download des Binaries)
-      - name: Scan SBOM (OSV Scanner)
-        run: |
-          curl -sL https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 -o osv-scanner
-          chmod +x osv-scanner
-          ./osv-scanner -L ${{ runner.temp }}/frontend.cdx.json
