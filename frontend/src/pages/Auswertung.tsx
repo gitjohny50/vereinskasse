@@ -38,6 +38,21 @@ type Metrik = "umsatz" | "anzahl" | "menge";
 type Gruppierung = "keine" | "kategorie" | "artikel" | "zahlart" | "bediener";
 type Bereich = "heute" | "gestern" | "7tage" | "gesamt" | "custom";
 
+interface ZeitreiheParams {
+  kassenprofil_id: number;
+  von: string;
+  bis: string;
+  granularitaet: Granularitaet;
+  metrik: Metrik;
+  gruppierung: Gruppierung;
+  pfand_einbeziehen: boolean;
+  ausrichtung: string;
+}
+
+interface ExtendedApi {
+  zeitreihe(params: ZeitreiheParams): Promise<Zeitreihe>;
+}
+
 const COLORS = ["var(--accent)", "var(--ok)", "var(--warn)", "var(--danger)", "#2563eb", "#7c3aed", "#0ea5e9", "#475569"];
 
 function startOfDay(d: Date) {
@@ -280,7 +295,7 @@ export function Auswertung({ profil }: { profil: Kassenprofil }) {
 
   const laden = useCallback(async () => {
     setFehler(null);
-    const params = {
+    const params: ZeitreiheParams = {
       kassenprofil_id: profil.id,
       von: isoLocal(rangeA.von),
       bis: isoLocal(rangeA.bis),
@@ -291,10 +306,11 @@ export function Auswertung({ profil }: { profil: Kassenprofil }) {
       ausrichtung: vergleichAktiv ? "relativ" : "absolut",
     };
     try {
-      const a = await (api as any).zeitreihe(params);
+      const erweiterteApi = api as unknown as ExtendedApi;
+      const a = await erweiterteApi.zeitreihe(params);
       setDaten(a);
       if (vergleichAktiv) {
-        setVergleich(await (api as any).zeitreihe({ ...params, von: isoLocal(rangeB.von), bis: isoLocal(rangeB.bis), ausrichtung: "relativ" }));
+        setVergleich(await erweiterteApi.zeitreihe({ ...params, von: isoLocal(rangeB.von), bis: isoLocal(rangeB.bis), ausrichtung: "relativ" }));
       } else {
         setVergleich(null);
       }

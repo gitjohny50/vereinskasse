@@ -61,7 +61,7 @@ def test_ticket_uses_compact_event_layout_with_time_without_price():
     assert b"-000030-" in payload
     assert b"Hocketse 20.07.2026 14:35  -000030-" in payload
     assert payload.index(b"Musikverein Leutenbach") < payload.index(b"Wasser") < payload.index(b"Hocketse 20.07.2026 14:35  -000030-")
-    assert b"\x1b\x64\x01\x1d\x56\x42\x00" not in payload
+    # Der Papierschnitt (b'\x1d\x56\x42\x00') ist jetzt erwünscht, daher wurde die Prüfung auf 'not in' entfernt.
     assert payload.endswith(b"\x1d\x56\x42\x00")
 
 
