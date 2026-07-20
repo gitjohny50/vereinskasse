@@ -268,7 +268,9 @@ export function Auswertung({ profil }: { profil: Kassenprofil }) {
     }
   }, [profil.id, tage, pfand]);
 
-  useEffect(() => { laden(); }, [laden]);
+  useEffect(() => {
+    laden();
+  }, [laden]);
 
   useEffect(() => {
     if (daten && selectedItem && !daten.top_artikel.some((i) => i.bezeichnung === selectedItem)) {
