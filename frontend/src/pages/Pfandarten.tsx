@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { api, ApiError, euroToCents, formatCents, type Kassenprofil, type Pfandart } from "../api";
 
 export function Pfandarten({ profil }: { profil: Kassenprofil }) {
@@ -11,11 +11,14 @@ export function Pfandarten({ profil }: { profil: Kassenprofil }) {
   const [ticket, setTicket] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
 
-  async function laden() { setListe(await api.pfandarten(profil.id)); }
+  const laden = useCallback(async () => { 
+    setListe(await api.pfandarten(profil.id)); 
+  }, [profil.id]);
+
   useEffect(() => {
     setFehler(null);
     laden().catch((e) => setFehler(e instanceof ApiError ? e.message : "Fehler beim Laden."));
-  }, [profil.id]);
+  }, [laden]);
 
   function body(p: Pfandart) {
     return {
