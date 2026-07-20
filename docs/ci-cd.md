@@ -1,3 +1,11 @@
+Hier ist deine vollständige, aktualisierte Markdown-Dokumentation. Ich habe einen neuen Abschnitt **„Datenbank-Handling in der CI (SQLite)“** direkt vor den geplanten Erweiterungen eingefügt.
+
+Dort ist genau dokumentiert, warum wir aktuell den Weg über das `/tmp`-Verzeichnis gehen (Möglichkeit A) und wie du es später mit einer kleinen Code-Änderung auf die extrem schnelle In-Memory-Lösung (Möglichkeit B) umbauen kannst.
+
+Kopiere dir einfach diesen kompletten Block:
+
+---
+
 # CI/CD Pipeline Dokumentation
 
 Dieses Dokument beschreibt die Continuous Integration (CI) Pipeline des Projekts, die mit [GitHub Actions](https://github.com/features/actions) eingesetzt und implementiert wird. Die Pipeline dient dazu, die Code-Qualität bei jeder Code-Änderung automatisch zu überprüfen, Sicherheitslücken aufzudecken und sicherzustellen, dass das Projekt stabil und fehlerfrei bleibt.
@@ -52,41 +60,89 @@ Dieser Job validiert den Frontend-Code, prüft die NPM-Abhängigkeiten auf Siche
 6. **Code-Stil prüfen (Linting):** Führt `npm run lint` aus, was wiederum ESLint startet. ESLint überprüft den Code auf Fehler und Stilprobleme.
 7. **Projekt bauen (Build):** Führt `npm run build` aus. Dieser Schritt kompiliert den Code für die Produktion. Ein erfolgreicher Build bestätigt, dass es keine Typ- oder Syntaxfehler gibt, die die Kompilierung verhindern würden.
 
+---
+
+## Datenbank-Handling in der CI (SQLite)
+
+Das Projekt verwendet SQLite als Datenbank. Da die Tests in der Cloud-Pipeline isoliert ablaufen sollen, muss sichergestellt werden, dass keine Konflikte mit Produktionsdaten entstehen.
+
+### Aktuelle Umsetzung (Temporäre Datei)
+
+Da die Konfiguration (`config.py`) den Datenbankpfad aktuell fest aus einem Verzeichnis (`VK_DATA_DIR`) und dem Dateinamen (`kasse.sqlite3`) zusammensetzt, nutzen wir in der CI eine Umgebungsvariable, um die Datenbank auszulagern:
+
+* **Pipeline-Konfiguration:** Im Test-Schritt wird die Variable `VK_DATA_DIR: /tmp` gesetzt.
+* **Funktionsweise:** Die CI-Runner legen für die Dauer des Backend-Tests die Datei unter `/tmp/kasse.sqlite3` an.
+* **Vorteil:** Es sind keine Anpassungen am bestehenden Python-Code nötig. Nach Abschluss des Jobs wird der temporäre Linux-Ordner mitsamt dem GitHub-Runner restlos verworfen, sodass die Umgebung immer sauber bleibt.
+
+### Zukünftige Optimierung (In-Memory-Datenbank)
+
+Um die Tests noch performanter zu machen, kann die Architektur zukünftig auf eine In-Memory-Datenbank umgestellt werden. Hierbei wird gar keine physische Datei mehr geschrieben, sondern der Arbeitsspeicher (RAM) genutzt.
+
+**So wird die Umstellung durchgeführt:**
+
+1. **Code-Anpassung (`config.py`):** Die Eigenschaft `db_url` muss so angepasst werden, dass sie das vollständige Überschreiben der URL zulässt:
+```python
+@property
+def db_url(self) -> str:
+    override_url = os.environ.get("DATABASE_URL")
+    if override_url:
+        return override_url
+    return f"sqlite:///{self.db_path}"
+
+```
+
+
+2. **Pipeline-Anpassung (`ci.yml`):** Der Test-Schritt wird anschließend von `VK_DATA_DIR: /tmp` auf die explizite URL-Variable geändert:
+```yaml
+env:
+  DATABASE_URL: "sqlite:///:memory:"
+
+```
 
 
 
+---
 
 ## Geplante Erweiterungen (Future Work)
 
 Um die CI/CD-Pipeline in Zukunft noch robuster und näher an der Produktionsumgebung zu gestalten, sind folgende Ausbaustufen möglich:
 
 ### 1. Datenbank-Integration für Integrationstests
-- **Service Container:** Einbindung einer echten temporären Datenbank (z. B. PostgreSQL oder SQLite/MySQL) über GitHub Actions Service Container.
-- **Isolierte Testumgebung:** Die Pipeline startet den Datenbank-Container vor den Backend-Tests, führt `pytest` gegen diese echte Datenbank aus und löscht sie nach dem Job restlos.
-- **Vorteil:** Echte Integrationstests statt simulierter (gemockter) Datenbankverbindungen.
+
+* **Service Container:** Einbindung einer echten temporären Server-Datenbank (falls ein Wechsel auf z.B. PostgreSQL stattfindet) über GitHub Actions Service Container.
+* **Isolierte Testumgebung:** Die Pipeline startet den Datenbank-Container vor den Backend-Tests, führt `pytest` gegen diese echte Datenbank aus und löscht sie nach dem Job restlos.
+* **Vorteil:** Echte Integrationstests statt simulierter Datenbankverbindungen.
 
 ### 2. Deployment-Vorbereitung für Raspberry Pi (ARM-Architektur)
-- **Option A - Cross-Compiling:** Nutzung von Tools wie *Docker Buildx* innerhalb der Ubuntu-Runner, um den Code explizit für die ARM-Architektur (`arm64`) des Raspberry Pi zu bauen.
-- **Option B - Self-Hosted Runner:** Registrierung des Ziel-Raspberry-Pi als eigenen Runner in GitHub Actions (`runs-on: self-hosted`).
-- **Vorteil:** Die Pipeline-Jobs oder Deployment-Schritte laufen direkt auf der echten Hardware ab, was Architektur-Konflikte ausschließt.
+
+* **Option A - Cross-Compiling:** Nutzung von Tools wie *Docker Buildx* innerhalb der Ubuntu-Runner, um den Code explizit für die ARM-Architektur (`arm64`) des Raspberry Pi zu bauen.
+* **Option B - Self-Hosted Runner:** Registrierung des Ziel-Raspberry-Pi als eigenen Runner in GitHub Actions (`runs-on: self-hosted`).
+* **Vorteil:** Die Pipeline-Jobs oder Deployment-Schritte laufen direkt auf der echten Hardware ab, was Architektur-Konflikte ausschließt.
+
 ### 3. Containerisierung (Docker)
-- **Automatisierte Image-Builds:** Erweiterung der Pipeline um Schritte, die aus dem getesteten Code fertige Docker-Images für Backend und Frontend bauen.
-- **Image-Registry:** Hochladen (Push) der fertigen Images in eine Registry wie GitHub Packages oder Docker Hub.
-- **Vorteil:** Extrem leichtes und konsistentes Deployment auf dem Zielsystem (Raspberry Pi), da alle Abhängigkeiten gekapselt sind.
+
+* **Automatisierte Image-Builds:** Erweiterung der Pipeline um Schritte, die aus dem getesteten Code fertige Docker-Images für Backend und Frontend bauen.
+* **Image-Registry:** Hochladen (Push) der fertigen Images in eine Registry wie GitHub Packages oder Docker Hub.
+* **Vorteil:** Extrem leichtes und konsistentes Deployment auf dem Zielsystem (Raspberry Pi), da alle Abhängigkeiten gekapselt sind.
 
 ### 4. Continuous Deployment (CD)
-- **Automatisches Ausrollen:** Einrichtung eines CD-Jobs, der nur bei einem Push auf den `main`-Branch aktiv wird und die neue Version automatisch auf den Raspberry Pi überträgt (z.B. via SSH, Ansible oder Watchtower).
-- **Vorteil:** Der manuelle Aufwand für Updates entfällt komplett; jede freigegebene Änderung ist sofort live.
+
+* **Automatisches Ausrollen:** Einrichtung eines CD-Jobs, der nur bei einem Push auf den `main`-Branch aktiv wird und die neue Version automatisch auf den Raspberry Pi überträgt (z.B. via SSH, Ansible oder Watchtower).
+* **Vorteil:** Der manuelle Aufwand für Updates entfällt komplett; jede freigegebene Änderung ist sofort live.
 
 ### 5. End-to-End (E2E) Testing
-- **Browser-Automatisierung:** Integration von Tools wie *Playwright* oder *Cypress* in einem separaten Pipeline-Job.
-- **Zusammenspiel testen:** Starten von Frontend, Backend und Datenbank in der CI, um echte Klickpfade von Benutzern im Browser zu simulieren.
-- **Vorteil:** Stellt sicher, dass nicht nur isolierte Funktionen (Unit-Tests), sondern das gesamte System im Zusammenspiel fehlerfrei funktioniert.
+
+* **Browser-Automatisierung:** Integration von Tools wie *Playwright* oder *Cypress* in einem separaten Pipeline-Job.
+* **Zusammenspiel testen:** Starten von Frontend, Backend und Datenbank in der CI, um echte Klickpfade von Benutzern im Browser zu simulieren.
+* **Vorteil:** Stellt sicher, dass nicht nur isolierte Funktionen (Unit-Tests), sondern das gesamte System im Zusammenspiel fehlerfrei funktioniert.
 
 ### 6. Static Application Security Testing (SAST)
-- **Erweiterte Code-Analyse:** Einbindung von Tools wie *GitHub CodeQL* oder *SonarQube*.
-- **Vorteil:** Während der aktuelle OSV-Scanner Fremdpakete auf Schwachstellen prüft, scannen SAST-Tools deinen *selbstgeschriebenen* Quellcode auf logische Sicherheitslücken (z.B. SQL-Injections) und Architekturfehler, die über einfaches Linting hinausgehen.
+
+* **Erweiterte Code-Analyse:** Einbindung von Tools wie *GitHub CodeQL* oder *SonarQube*.
+* **Vorteil:** Während der aktuelle OSV-Scanner Fremdpakete auf Schwachstellen prüft, scannen SAST-Tools deinen *selbstgeschriebenen* Quellcode auf logische Sicherheitslücken (z.B. SQL-Injections) und Architekturfehler, die über einfaches Linting hinausgehen.
+
 ### 7. Hardware-Integration & Hardware-in-the-Loop (HIL)
-- **Drucker-Simulation (Mocking):** Erweiterung der Backend-Tests (`pytest`), um die `pyusb`-Aufrufe zu simulieren. So wird die Kassenlogik für den USB-Bondrucker in der Cloud-CI getestet, ohne dass physische Hardware angeschlossen sein muss.
-- **Physische Hardware-Tests (HIL):** Nutzung eines Self-Hosted Runners (Raspberry Pi) mit lokal angeschlossenem USB-Bondrucker. Die Pipeline kann so konfiguriert werden, dass sie nach erfolgreichem Deployment verifiziert, ob die `libusb`-Abhängigkeiten sowie die `udev`-Rechte korrekt gesetzt sind, und automatisiert eine Testseite druckt.
-- **Validierung von Systemdateien:** Die CI kann automatisiert prüfen, ob Dateien wie die `99-vereinskasse-usb.rules` syntaktisch korrekt formatiert sind, bevor sie auf das Zielsystem ausgerollt werden.
+
+* **Drucker-Simulation (Mocking):** Erweiterung der Backend-Tests (`pytest`), um die `pyusb`-Aufrufe zu simulieren. So wird die Kassenlogik für den USB-Bondrucker in der Cloud-CI getestet, ohne dass physische Hardware angeschlossen sein muss.
+* **Physische Hardware-Tests (HIL):** Nutzung eines Self-Hosted Runners (Raspberry Pi) mit lokal angeschlossenem USB-Bondrucker. Die Pipeline kann so konfiguriert werden, dass sie nach erfolgreichem Deployment verifiziert, ob die `libusb`-Abhängigkeiten sowie die `udev`-Rechte korrekt gesetzt sind, und automatisiert eine Testseite druckt.
+* **Validierung von Systemdateien:** Die CI kann automatisiert prüfen, ob Dateien wie die `99-vereinskasse-usb.rules` syntaktisch korrekt formatiert sind, bevor sie auf das Zielsystem ausgerollt werden.

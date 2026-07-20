@@ -34,7 +34,10 @@ jobs:
       - name: Lint with ruff
         run: ruff check app/ tests/
 
+      # Hier greift Möglichkeit A: Die Datenbankdatei wird im temporären Ordner abgelegt
       - name: Run tests and generate coverage report
+        env:
+          VK_DATA_DIR: /tmp
         run: pytest --cov=app --cov-report=xml
 
       - name: Generate SBOM (Syft)
