@@ -1,0 +1,36 @@
+name: Performance Test
+on: [workflow_dispatch] # Nur manuell starten
+
+jobs:
+  load-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+
+      - name: Install dependencies
+        run: |
+          # Wechsel in den Backend-Ordner und installiere Abhängigkeiten
+          cd backend
+          pip install -r requirements.txt
+          pip install locust requests
+
+      - name: Start FastAPI Backend
+        run: |
+          cd backend
+          # Backend im Hintergrund starten (&)
+          VK_INITIAL_ADMIN_PIN=123456 VK_DATA_DIR=$(mktemp -d) uvicorn app.main:app &
+          sleep 3 # Kurz warten, bis der Server hochgefahren ist
+
+      - name: Seed Test Data
+        run: |
+          # Skript aus dem neuen Pfad ausführen
+          python backend/tests/stresstests/seed_test_data.py
+
+      - name: Run Load Test
+        run: |
+          # Locust aus dem neuen Pfad ausführen
+          locust -f backend/tests/stresstests/locustfile.py --headless -u 10 -r 2 --run-time 1m --host http://localhost:8000
