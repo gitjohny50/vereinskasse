@@ -87,7 +87,7 @@ def build_cut_test(cfg: dict[str, str], count: int = 3) -> bytes:
     b = _builder(cfg)
     b.init()
     mode = cfg.get("schnitt.modus", "partial")
-    feed = int(cfg.get("schnitt.vorschub_zeilen", "3"))
+    feed = int(cfg.get("artikelticket.vorschub_zeilen", cfg.get("schnitt.vorschub_zeilen", "1")))
     for i in range(1, count + 1):
         b.align("center").bold(True).size(2, 2).line(f"TICKET {i}/{count}")
         b.size(1, 1).bold(False).line("Schnitt-Test")
@@ -286,32 +286,41 @@ def build_receipt_bytes(
     return b.build()
 
 
-def _ticket_liste(positionen: list[dict]) -> list[str]:
+def _ticket_name(bezeichnung: str) -> str:
+    if bezeichnung.startswith("Pfand: "):
+        return "Pfand " + bezeichnung.removeprefix("Pfand: ")
+    return bezeichnung
+
+
+def _ticket_liste(positionen: list[dict]) -> list[dict]:
     """Erzeugt aus den Positionen die einzelnen Artikeltickets (Lastenheft 14.3):
     pro_stueck -> ein Ticket je Stück, pro_position -> ein Ticket je Position,
     kein -> keine Tickets."""
-    tickets: list[str] = []
+    tickets: list[dict] = []
     for p in positionen:
         modus = p.get("artikelticket_modus", "kein")
+        name = _ticket_name(p["bezeichnung"])
         if modus == "pro_stueck":
-            tickets.extend([p["bezeichnung"]] * p["menge"])
+            tickets.extend([{"bezeichnung": name}] * p["menge"])
         elif modus == "pro_position":
-            bez = p["bezeichnung"] if p["menge"] == 1 else f'{p["bezeichnung"]} x{p["menge"]}'
-            tickets.append(bez)
+            bez = name if p["menge"] == 1 else f'{name} x{p["menge"]}'
+            tickets.append({"bezeichnung": bez})
     return tickets
 
 
-def build_tickets_bytes(cfg: dict[str, str], tickets: list[str], belegnummer: str) -> bytes | None:
+def build_tickets_bytes(cfg: dict[str, str], tickets: list[dict], belegnummer: str) -> bytes | None:
     if not tickets:
         return None
     b = _builder(cfg)
     b.init()
-    for bez in tickets:
-        _ticket_block(b, cfg, bez, belegnummer)
+    for ticket in tickets:
+        _ticket_block(b, cfg, ticket["bezeichnung"], belegnummer)
     return b.build()
 
 
-def build_ticket_bytes(cfg: dict[str, str], bezeichnung: str, belegnummer: str, kopf: str = "") -> bytes:
+def build_ticket_bytes(
+    cfg: dict[str, str], bezeichnung: str, belegnummer: str, kopf: str = ""
+) -> bytes:
     """Ein einzelnes Artikelticket für getrennte Druckaufträge je Artikel.
 
     ``kopf`` erscheint klein über dem Artikelnamen, z. B. Vereins- oder Veranstaltungsname.
@@ -321,27 +330,35 @@ def build_ticket_bytes(cfg: dict[str, str], bezeichnung: str, belegnummer: str, 
     _ticket_block(b, cfg, bezeichnung, belegnummer, kopf)
     return b.build()
 
-def _ticket_block(b: EscposBuilder, cfg: dict[str, str], bezeichnung: str, belegnummer: str, kopf: str = "") -> None:
+def _ticket_block(
+    b: EscposBuilder,
+    cfg: dict[str, str],
+    bezeichnung: str,
+    belegnummer: str,
+    kopf: str = "",
+) -> None:
     mode = cfg.get("schnitt.modus", "partial")
-    feed = int(cfg.get("schnitt.vorschub_zeilen", "3"))
+    try:
+        feed = max(0, int(cfg.get("artikelticket.vorschub_zeilen", "0")))
+    except ValueError:
+        feed = 0
+    kopfzeilen = [zeile.strip() for zeile in (kopf or "Vereinskasse").split("\n") if zeile.strip()]
+    verein = kopfzeilen[0] if kopfzeilen else "Vereinskasse"
+    details = kopfzeilen[1:]
 
     b.align("center")
-
-    for zeile in (kopf or "Vereinskasse").split("\n"):
-        if zeile.strip():
-            b.bold(False).size(1, 1).line(zeile.strip())
-
+    b.bold(False).size(1, 1).line(verein)
     b.bold(True).size(2, 2).line(bezeichnung)
-    # Einige ESC/POS-Drucker verschlucken nach doppelter Hoehe sonst den Anfang der Folgezeile.
     b.bold(False).size(1, 1).feed(1)
-    b.line(f"Beleg {belegnummer}")
+    detail = " ".join(details).strip()
+    b.line(f"{detail}  -{belegnummer}-" if detail else f"-{belegnummer}-")
     b.cut(mode=mode, feed_lines=feed)
 
 def _pos_dicts(verkauf: Verkauf) -> list[dict]:
     return [
         {
             "bezeichnung": p.bezeichnung, "menge": p.menge, "gesamt_cent": p.gesamt_cent,
-            "artikelticket_modus": p.artikelticket_modus, "typ": p.typ,
+            "einzelpreis_cent": p.einzelpreis_cent, "artikelticket_modus": p.artikelticket_modus, "typ": p.typ,
         }
         for p in verkauf.positionen
     ]
