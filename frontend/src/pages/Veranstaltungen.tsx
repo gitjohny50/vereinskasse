@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { api, ApiError, type Kassenprofil, type Verein } from "../api";
 
 type EditVerein = { id: number; name: string; anschrift: string; kontakt: string };
@@ -14,12 +14,16 @@ export function Veranstaltungen({ onProfilesChanged }: { onProfilesChanged?: () 
   const [editVerein, setEditVerein] = useState<EditVerein | null>(null);
   const [editProfil, setEditProfil] = useState<EditProfil | null>(null);
 
-  async function laden() {
+  const laden = useCallback(async () => {
     const [vs, ps] = await Promise.all([api.vereine(), api.profile()]);
-    setVereine(vs); setProfile(ps);
-    if (pVerein === "" && vs.length) setPVerein(vs[0].id);
-  }
-  useEffect(() => { laden().catch((e) => setFehler(e instanceof ApiError ? e.message : "Fehler beim Laden.")); }, []);
+    setVereine(vs); 
+    setProfile(ps);
+    setPVerein((prev) => (prev === "" && vs.length > 0 ? vs[0].id : prev));
+  }, []);
+
+  useEffect(() => { 
+    laden().catch((e) => setFehler(e instanceof ApiError ? e.message : "Fehler beim Laden.")); 
+  }, [laden]);
 
   function melde(e: unknown) { setFehler(e instanceof ApiError ? e.message : "Speichern fehlgeschlagen."); }
 
@@ -27,6 +31,7 @@ export function Veranstaltungen({ onProfilesChanged }: { onProfilesChanged?: () 
     if (!vName.trim()) { setFehler("Vereinsname fehlt."); return; }
     try { await api.vereinAnlegen({ name: vName.trim() }); setVName(""); setFehler(null); await laden(); } catch (e) { melde(e); }
   }
+  
   async function vereinSpeichern() {
     if (!editVerein?.name.trim()) { setFehler("Vereinsname fehlt."); return; }
     try {
@@ -35,6 +40,7 @@ export function Veranstaltungen({ onProfilesChanged }: { onProfilesChanged?: () 
       await laden();
     } catch (e) { melde(e); }
   }
+  
   async function profilAnlegen() {
     if (!pName.trim()) { setFehler("Profilname fehlt."); return; }
     if (pVerein === "") { setFehler("Verein wählen."); return; }
@@ -45,6 +51,7 @@ export function Veranstaltungen({ onProfilesChanged }: { onProfilesChanged?: () 
       onProfilesChanged?.();
     } catch (e) { melde(e); }
   }
+  
   async function profilSpeichern(next = editProfil) {
     if (!next?.name.trim()) { setFehler("Profilname fehlt."); return; }
     try {
@@ -54,6 +61,7 @@ export function Veranstaltungen({ onProfilesChanged }: { onProfilesChanged?: () 
       onProfilesChanged?.();
     } catch (e) { melde(e); }
   }
+  
   async function pfandUmschalten(p: Kassenprofil) {
     await profilSpeichern({
       id: p.id,
@@ -65,6 +73,7 @@ export function Veranstaltungen({ onProfilesChanged }: { onProfilesChanged?: () 
       pfand_aktiv: !p.pfand_aktiv,
     });
   }
+  
   async function profilLoeschen(p: Kassenprofil) {
     if (!window.confirm(`Kassenprofil "${p.name}" ausblenden? Alte Belege bleiben erhalten, das Profil wird nur deaktiviert.`)) return;
     try {

@@ -1,0 +1,135 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, dev, cicd-pipline ]
+  pull_request:
+    branches: [ main, dev, cicd-pipline ]
+
+jobs:
+  ###################
+  #   BACKEND JOB   #
+  ###################
+  backend-ci:
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12' 
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov ruff
+
+      - name: Lint with ruff
+        run: ruff check app/ tests/
+
+      # Hier greift Möglichkeit A: Die Datenbankdatei wird im temporären Ordner abgelegt
+      - name: Run tests and generate coverage report
+        env:
+          VK_DATA_DIR: /tmp
+        run: pytest --cov=app --cov-report=xml
+
+      - name: Generate SBOM (Syft)
+        uses: anchore/sbom-action@v0
+        with:
+          format: cyclonedx-json
+          output-file: ${{ runner.temp }}/backend.cdx.json
+
+      - name: Scan SBOM (OSV Scanner)
+        run: |
+          curl -sL https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 -o osv-scanner
+          chmod +x osv-scanner
+          ./osv-scanner -L ${{ runner.temp }}/backend.cdx.json
+
+  ####################
+  #   FRONTEND JOB   #
+  ####################
+  frontend-ci:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./frontend
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      # SBOM Generierung und Scan VOR der Paket-Installation (Umgeht node_modules)
+      - name: Generate SBOM (Syft)
+        uses: anchore/sbom-action@v0
+        with:
+          format: cyclonedx-json
+          output-file: ${{ runner.temp }}/frontend.cdx.json
+          
+      - name: Scan SBOM (OSV Scanner)
+        run: |
+          curl -sL https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 -o osv-scanner
+          chmod +x osv-scanner
+          ./osv-scanner -L ${{ runner.temp }}/frontend.cdx.json
+
+      # Danach ganz normal das Projekt aufsetzen und bauen
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' 
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint with ESLint
+        run: npm run lint
+
+      - name: Build project
+        run: npm run build
+
+  ####################
+  #    SAST JOB      #
+  ####################
+  security-sast:
+    name: CodeQL Security Scan
+    runs-on: ubuntu-latest
+    
+    # Erforderlich, damit CodeQL Ergebnisse in den GitHub Security Tab schreiben kann
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    # Führt den Job einmal für Python und einmal für JS/TS aus
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'python', 'javascript' ]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+
+      # Automatisiertes Bauen (relevant für kompilierte Sprachen/Frameworks)
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      # Führt die eigentliche Analyse durch und lädt die Ergebnisse hoch
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{matrix.language}}"
