@@ -114,41 +114,45 @@ env:
 
 ---
 
+Das ist eine hervorragende Idee. Es ist für die Projektdokumentation sehr wertvoll, nicht nur festzuhalten, *was* geplant ist, sondern auch *warum* es aktuell noch nicht umgesetzt wurde. Das hilft später jedem (auch dir selbst), die Entscheidungen nachzuvollziehen.
+
+Wir schreiben das als einleitenden Absatz direkt unter die Überschrift **Geplante Erweiterungen (Future Work)**. Dadurch wird sofort klar, dass das Fundament steht und der Rest bewusst aufgeschoben wurde.
+
+Ersetze in deiner Dokumentation einfach den gesamten Block ab `## Geplante Erweiterungen (Future Work)` mit folgendem Text:
+
+---
+
 ## Geplante Erweiterungen (Future Work)
 
-Um die CI/CD-Pipeline in Zukunft noch robuster und näher an der Produktionsumgebung zu gestalten, sind folgende Ausbaustufen möglich:
+**Aktueller Status (Entwicklungsphase):**
+Die CI/CD-Pipeline hat mit dem aktuellen Stand (Linting, Tests, In-Memory-Datenbank und Security-Scans per OSV und CodeQL) ein extrem professionelles und solides Fundament erreicht. Sie tut genau das, was sie in dieser frühen Projektphase tun soll: Sie hält den Rücken frei und stellt sicher, dass beim Programmieren neuer Features keine Fehler oder Sicherheitslücken eingebaut werden.
 
-### 1. Datenbank-Integration für Integrationstests
+**Verschobene Meilensteine:**
+Komplexe Themen wie automatisches Deployment, Containerisierung oder Hardware-Tests auf dem Raspberry Pi werden bewusst auf einen späteren Zeitpunkt verschoben. Dies ermöglicht es, sich voll auf die eigentliche Entwicklung der Software (Frontend-Ansichten, Backend-Routen, Kassenlogik) zu konzentrieren. Wenn die Anwendung feature-komplett ist und der erste echte Einsatz im Verein näherrückt, können die folgenden Ausbaustufen flexibel in die Pipeline eingeklinkt werden:
 
-* **Service Container:** Einbindung einer echten temporären Server-Datenbank (falls ein Wechsel auf z.B. PostgreSQL stattfindet) über GitHub Actions Service Container.
-* **Isolierte Testumgebung:** Die Pipeline startet den Datenbank-Container vor den Backend-Tests, führt `pytest` gegen diese echte Datenbank aus und löscht sie nach dem Job restlos.
-* **Vorteil:** Echte Integrationstests statt simulierter Datenbankverbindungen.
+### 1. Deployment-Vorbereitung für Raspberry Pi (ARM-Architektur)
 
-### 2. Deployment-Vorbereitung für Raspberry Pi (ARM-Architektur)
+* **Native Bereitstellung:** Direkte Ausführung der Anwendung auf der Hardware (Bare Metal) ohne Container-Abstraktion, um bekannten Problemen bei der direkten Gerätekommunikation (USB/udev für den Bondrucker) aus dem Weg zu gehen.
+* **Option A - Cross-Compiling:** Nutzung von Tools innerhalb der Ubuntu-Runner, um den Code explizit für die ARM-Architektur (`arm64`) des Raspberry Pi vorzubereiten.
+* **Option B - Self-Hosted Runner:** Registrierung des Ziel-Raspberry-Pi als eigenen Runner in GitHub Actions (`runs-on: self-hosted`), der sich seine Aufgaben selbstständig abholt.
 
-* **Option A - Cross-Compiling:** Nutzung von Tools wie *Docker Buildx* innerhalb der Ubuntu-Runner, um den Code explizit für die ARM-Architektur (`arm64`) des Raspberry Pi zu bauen.
-* **Option B - Self-Hosted Runner:** Registrierung des Ziel-Raspberry-Pi als eigenen Runner in GitHub Actions (`runs-on: self-hosted`).
-* **Vorteil:** Die Pipeline-Jobs oder Deployment-Schritte laufen direkt auf der echten Hardware ab, was Architektur-Konflikte ausschließt.
+### 2. Continuous Deployment (CD)
 
-### 3. Containerisierung (Docker)
-
-* **Automatisierte Image-Builds:** Erweiterung der Pipeline um Schritte, die aus dem getesteten Code fertige Docker-Images für Backend und Frontend bauen.
-* **Image-Registry:** Hochladen (Push) der fertigen Images in eine Registry wie GitHub Packages oder Docker Hub.
-* **Vorteil:** Extrem leichtes und konsistentes Deployment auf dem Zielsystem (Raspberry Pi), da alle Abhängigkeiten gekapselt sind.
-
-### 4. Continuous Deployment (CD)
-
-* **Automatisches Ausrollen:** Einrichtung eines CD-Jobs, der nur bei einem Push auf den `main`-Branch aktiv wird und die neue Version automatisch auf den Raspberry Pi überträgt (z.B. via SSH, Ansible oder Watchtower).
+* **Automatisches Ausrollen:** Einrichtung eines CD-Jobs, der nur bei einem Push auf den `main`-Branch aktiv wird und die neue Version automatisch auf den Raspberry Pi überträgt (z.B. via SSH oder Ansible).
 * **Vorteil:** Der manuelle Aufwand für Updates entfällt komplett; jede freigegebene Änderung ist sofort live.
+
+### 3. Hardware-Integration & Hardware-in-the-Loop (HIL)
+
+* **Drucker-Simulation (Mocking):** Erweiterung der Backend-Tests (`pytest`), um die `pyusb`-Aufrufe zu simulieren. So wird die Kassenlogik für den USB-Bondrucker in der Cloud-CI getestet, ohne dass physische Hardware angeschlossen sein muss.
+* **Physische Hardware-Tests (HIL):** Bei Nutzung eines Self-Hosted Runners (Raspberry Pi) mit lokal angeschlossenem USB-Bondrucker kann die Pipeline nach einem Deployment automatisiert eine Testseite drucken.
+* **Validierung von Systemdateien:** Die CI kann automatisiert prüfen, ob Dateien wie die `99-vereinskasse-usb.rules` syntaktisch korrekt formatiert sind, bevor sie ausgerollt werden.
+
+### 4. Datenbank-Integration für Integrationstests
+
+* **Service Container:** Einbindung einer echten temporären Server-Datenbank (falls später ein Wechsel von SQLite auf z.B. PostgreSQL stattfindet) über GitHub Actions Service Container.
+* **Vorteil:** Echte Integrationstests statt simulierter Datenbankverbindungen.
 
 ### 5. End-to-End (E2E) Testing
 
 * **Browser-Automatisierung:** Integration von Tools wie *Playwright* oder *Cypress* in einem separaten Pipeline-Job.
 * **Zusammenspiel testen:** Starten von Frontend, Backend und Datenbank in der CI, um echte Klickpfade von Benutzern im Browser zu simulieren.
-* **Vorteil:** Stellt sicher, dass nicht nur isolierte Funktionen (Unit-Tests), sondern das gesamte System im Zusammenspiel fehlerfrei funktioniert.
-
-### 6. Hardware-Integration & Hardware-in-the-Loop (HIL)
-
-* **Drucker-Simulation (Mocking):** Erweiterung der Backend-Tests (`pytest`), um die `pyusb`-Aufrufe zu simulieren. So wird die Kassenlogik für den USB-Bondrucker in der Cloud-CI getestet, ohne dass physische Hardware angeschlossen sein muss.
-* **Physische Hardware-Tests (HIL):** Nutzung eines Self-Hosted Runners (Raspberry Pi) mit lokal angeschlossenem USB-Bondrucker. Die Pipeline kann so konfiguriert werden, dass sie nach erfolgreichem Deployment verifiziert, ob die `libusb`-Abhängigkeiten sowie die `udev`-Rechte korrekt gesetzt sind, und automatisiert eine Testseite druckt.
-* **Validierung von Systemdateien:** Die CI kann automatisiert prüfen, ob Dateien wie die `99-vereinskasse-usb.rules` syntaktisch korrekt formatiert sind, bevor sie auf das Zielsystem ausgerollt werden.

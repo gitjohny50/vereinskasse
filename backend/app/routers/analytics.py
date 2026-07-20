@@ -1,4 +1,4 @@
-"""Auswertungen für Admin und Service."""
+"""Auswertungen fÃ¼r Admin und Service."""
 from __future__ import annotations
 
 from collections import defaultdict
