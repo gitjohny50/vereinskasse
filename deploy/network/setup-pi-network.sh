@@ -7,7 +7,6 @@ set -euo pipefail
 HOSTNAME="${1:-kasse}"
 AP_SSID="${2:-Vereinskasse-${HOSTNAME}}"
 AP_PASSWORD="${3:-}"
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 AP_ADDRESS="10.42.0.1"
 
 if [[ "${EUID}" -ne 0 ]]; then
@@ -16,7 +15,7 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 apt-get update
-apt-get install -y avahi-daemon avahi-utils chrony network-manager curl python3
+apt-get install -y avahi-daemon avahi-utils chrony network-manager curl
 
 hostnamectl set-hostname "${HOSTNAME}"
 systemctl enable --now avahi-daemon
@@ -47,25 +46,11 @@ if command -v nmcli >/dev/null 2>&1; then
   fi
 fi
 
-# Captive Portal für iPad/Android/Windows: Im lokalen Hotspot beantworten wir
-# alle DNS-Namen mit der Hotspot-Adresse und liefern auf Port 80 eine
-# Weiterleitung zur Kasse aus. Das greift nur für Clients im AP-Netz.
-install -d -m 0755 /etc/NetworkManager/dnsmasq-shared.d
-cat > /etc/NetworkManager/dnsmasq-shared.d/99-vereinskasse-captive.conf <<EOF
-address=/#/${AP_ADDRESS}
-address=/${HOSTNAME}.local/${AP_ADDRESS}
-EOF
-
-install -d -m 0755 /etc/systemd/system
-sed \
-  -e "s#__PROJECT_DIR__#${PROJECT_DIR}#g" \
-  -e "s#__HOSTNAME__#${HOSTNAME}#g" \
-  "${PROJECT_DIR}/deploy/network/vereinskasse-captive-portal.service" \
-  > /etc/systemd/system/vereinskasse-captive-portal.service
-
+# Falls eine ältere Version das Captive Portal eingerichtet hatte: entfernen.
+systemctl disable --now vereinskasse-captive-portal.service >/dev/null 2>&1 || true
+rm -f /etc/systemd/system/vereinskasse-captive-portal.service
+rm -f /etc/NetworkManager/dnsmasq-shared.d/99-vereinskasse-captive.conf
 systemctl daemon-reload
-systemctl enable --now vereinskasse-captive-portal.service
-systemctl restart NetworkManager || true
 
 cat <<EOF
 
@@ -80,10 +65,6 @@ Internetstatus testen:
 Optionaler lokaler iPad-Zugang ohne externes Netzwerk:
   sudo nmcli connection up vereinskasse-local-ap
   sudo nmcli connection down vereinskasse-local-ap
-
-Captive Portal:
-  systemctl status vereinskasse-captive-portal.service
-  Das iPad sollte nach Verbindung mit dem WLAN automatisch "Vereinskasse öffnen" anzeigen.
 
 WLAN-Zugangsdaten, falls Profil erzeugt wurde:
   sudo cat /etc/vereinskasse/local-ap.txt

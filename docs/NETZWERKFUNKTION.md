@@ -113,50 +113,19 @@ Hinweis: Das iPad kann sich später automatisch wieder mit dieser SSID verbinden
 wenn das Netz einmal gespeichert wurde. Das ist die sauberste Variante für
 "automatisch verbinden", ohne im Normalbetrieb dauerhaft ein WLAN zu senden.
 
-## Captive Portal und DNS-Umleitung
-
-Das Setup-Script richtet zusätzlich eine Captive-Portal-Logik ein:
-
-- DNS im Hotspot beantwortet alle Namen mit `10.42.0.1`.
-- Auf Port `80` läuft ein kleiner Portal-Responder.
-- Apple/Android/Windows-Portalprüfungen bekommen eine Weiterleitung zur Kasse.
-- Normale Browseraufrufe im Hotspot zeigen eine Seite mit Button `Kasse öffnen`.
-
-Prüfen:
-
-```bash
-systemctl status vereinskasse-captive-portal.service
-sudo journalctl -u vereinskasse-captive-portal.service -n 80 --no-pager
-```
-
-Hotspot neu starten:
-
-```bash
-sudo nmcli connection down vereinskasse-local-ap
-sudo nmcli connection up vereinskasse-local-ap
-```
-
-Wenn das iPad kein Fenster öffnet:
-
-```bash
-nmcli connection show --active
-ip addr show wlan0
-curl -I http://10.42.0.1
-```
-
-Manchmal cached iOS alte WLAN-Daten. Dann auf dem iPad das WLAN ignorieren und
-neu verbinden.
-
 ## Internetprüfung
 
 Der Pi bekommt bei Ethernet seine IP automatisch per DHCP. Die Anwendung prüft
 beim Start zusätzlich, ob eine Internetverbindung besteht. Der Startbeleg zeigt:
 
+- QR-Code auf die primäre Kassenadresse
 - lokale IP-Adressen
 - mDNS-Adresse
 - Internetstatus `online` oder `offline`
 - Hostname
 - lokale Uhrzeit
+- Backend-, Frontend- und Datenbankstatus
+- angelegte Benutzer
 
 Manuell prüfen:
 
@@ -219,6 +188,7 @@ Ein lokaler Hotspot ohne externes Netzwerk löst nur den Zugriff vom iPad auf di
 Kasse. Er ersetzt kein Internet. Externe Dienste funktionieren dann nur, wenn der
 Pi zusätzlich eine echte Internetverbindung hat.
 
-Ein Captive Portal kann die iPad-Startseite nur anstoßen, wenn iOS den Hotspot
-als neues oder geändertes Netzwerk prüft. Hat das iPad die Verbindung schon
-lange gespeichert, kann ein erneutes "Dieses Netzwerk ignorieren" nötig sein.
+Ein Captive Portal wird bewusst nicht eingesetzt, weil es auf dem iPad
+zusätzliche Bildschirmfläche belegt und den Kassenstart unnötig kompliziert
+macht. Der Zugriff erfolgt direkt über `http://kasse.local:8000` oder über den
+QR-Code auf dem Startbeleg.

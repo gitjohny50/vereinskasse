@@ -22,7 +22,7 @@ from .config import settings
 from .database import SessionLocal, init_db
 from .hardware import service as hw_service
 from .hardware.service import ensure_defaults
-from .models import Artikel, Kassenprofil
+from .models import Artikel, Benutzer, Kassenprofil
 from .routers import analytics, auth, catalog, diagnostics, health, profiles, reports, sales, settings as settings_router, users
 from .routers import print_queue as print_queue_router
 from . import print_queue
@@ -102,13 +102,12 @@ def _startup_info() -> dict[str, str | list[str]]:
     host = os.environ.get("VK_HOST", "0.0.0.0")
     port = os.environ.get("VK_PORT", "8000")
     ips = _local_ips()
-    urls = [f"http://{ip}:{port}" for ip in ips]
     hostname = socket.gethostname()
     mdns_name = os.environ.get("VK_MDNS_NAME", hostname or "kasse").strip().removesuffix(".local")
     mdns_url = f"http://{mdns_name}.local:{port}" if mdns_name else ""
-    if mdns_url:
-        urls.append(mdns_url)
-    if hostname:
+    urls = [mdns_url] if mdns_url else []
+    urls.extend(f"http://{ip}:{port}" for ip in ips)
+    if not mdns_url and hostname:
         urls.append(f"http://{hostname}.local:{port}")
     public_host = os.environ.get("VK_PUBLIC_HOST", "").strip()
     if public_host:
@@ -127,12 +126,22 @@ def _startup_info() -> dict[str, str | list[str]]:
             ).count()
         cfg = hw_service.load_hw_settings(session)
         drucker = cfg.get("drucker.transport", "mock")
+        benutzer_liste = [
+            f"{b.id}: {b.name} ({b.rolle.name}){' inaktiv' if not b.aktiv else ''}"
+            for b in session.query(Benutzer).order_by(Benutzer.name).all()
+        ]
+
+    frontend_ok = _frontend_dist.is_dir() and (_frontend_dist / "index.html").is_file()
+    db_ok = settings.db_path.exists()
 
     return {
         "zeit": now_local().strftime("%d.%m.%Y %H:%M:%S"),
         "hostname": hostname or "-",
         "user": getpass.getuser(),
         "version": settings.app_version,
+        "backend": "ok",
+        "frontend": "ok" if frontend_ok else "fehlt",
+        "datenbank": "ok" if db_ok else "fehlt",
         "internet": _internet_status(),
         "mdns": mdns_url or "-",
         "timezone": str(local_tz()),
@@ -141,6 +150,7 @@ def _startup_info() -> dict[str, str | list[str]]:
         "drucker": drucker,
         "host": host,
         "urls": urls,
+        "users": benutzer_liste,
     }
 
 
