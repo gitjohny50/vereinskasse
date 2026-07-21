@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach, Mock } from 'vitest';
 import { Artikel } from '../../pages/Artikel';
 import { api, type Kassenprofil, ApiError } from '../../api';
 
@@ -44,8 +44,8 @@ describe('Artikel Component', () => {
     // Restore all mocks before each test to ensure isolation
     vi.clearAllMocks(); // clearAllMocks ist hier besser, da wir die Mocks unten neu definieren
     // Mock initial data load for most tests
-    (api.kategorien as any).mockResolvedValue(mockKategorien);
-    (api.artikel as any).mockResolvedValue(mockArtikel);
+    (api.kategorien as Mock).mockResolvedValue(mockKategorien);
+    (api.artikel as Mock).mockResolvedValue(mockArtikel);
   });
 
   test('should render the list of articles on initial load', async () => {
@@ -195,7 +195,7 @@ describe('Artikel Component', () => {
     // Mock window.confirm to simulate user confirmation
     const confirmSpy = vi.spyOn(window, 'confirm').mockImplementation(() => true);
 
-    (api.artikelAlleArchivieren as any).mockResolvedValue({ anzahl: 1 });
+    (api.artikelAlleArchivieren as Mock).mockResolvedValue({ anzahl: 1 });
 
     render(<Artikel profil={mockProfil} />);
 
@@ -222,7 +222,7 @@ describe('Artikel Component', () => {
     const file = new File([csvContent], 'artikel.csv', { type: 'text/csv' });
 
     // Mock the API response for the import
-    (api.artikelCsvImport as any).mockResolvedValue({
+    (api.artikelCsvImport as Mock).mockResolvedValue({
       angelegt: 1,
       aktualisiert: 0,
       kategorien_angelegt: 0,
@@ -253,7 +253,7 @@ describe('Artikel Component', () => {
   test('should reset deposit assignments via maintenance action', async () => {
     const user = userEvent.setup();
     const confirmSpy = vi.spyOn(window, 'confirm').mockImplementation(() => true);
-    (api.artikelPfandZuruecksetzen as any).mockResolvedValue({ anzahl: 5 });
+    (api.artikelPfandZuruecksetzen as Mock).mockResolvedValue({ anzahl: 5 });
 
     render(<Artikel profil={mockProfil} />);
 
@@ -275,7 +275,7 @@ describe('Artikel Component', () => {
     const file = new File(['test'], 'test.csv', { type: 'text/csv' });
 
     // Mock a failure from the API
-    (api.artikelCsvImport as any).mockRejectedValue(new Error('Internal Server Error'));
+    (api.artikelCsvImport as Mock).mockRejectedValue(new Error('Internal Server Error'));
 
     render(<Artikel profil={mockProfil} />);
 
@@ -310,7 +310,7 @@ describe('Artikel Component', () => {
 
   test('should display an error if the initial data load fails', async () => {
     // Override the mock for this specific test
-    (api.artikel as any).mockRejectedValue(new Error('Ladefehler'));
+    (api.artikel as Mock).mockRejectedValue(new Error('Ladefehler'));
 
     render(<Artikel profil={mockProfil} />);
 
@@ -320,7 +320,7 @@ describe('Artikel Component', () => {
   test('should display an error in the edit dialog if saving fails', async () => {
     const user = userEvent.setup();
     // Mock the API to throw an error on save
-    (api.artikelAendern as any).mockRejectedValue(new ApiError(500, 'Server nicht erreichbar'));
+    (api.artikelAendern as Mock).mockRejectedValue(new ApiError(500, 'Server nicht erreichbar'));
 
     render(<Artikel profil={mockProfil} />);
 
@@ -341,7 +341,7 @@ describe('Artikel Component', () => {
 
   test.skip('should handle deposit quantity changes in the create form', async () => {
     const user = userEvent.setup();
-    (api.pfandarten as any).mockResolvedValue([
+    (api.pfandarten as Mock).mockResolvedValue([
       { id: 5, name: 'Kastenpfand', betrag_cent: 150, aktiv: true }
     ]);
 

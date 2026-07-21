@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach, Mock } from 'vitest';
 import { Belege } from '../../pages/Belege';
 import { api, type Kassenprofil, type Verkauf, ApiError } from '../../api';
 
@@ -56,8 +56,8 @@ const mockVerkaeufe: Verkauf[] = [
 describe('Belege Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (api.verkaeufe as any).mockResolvedValue(mockVerkaeufe);
-    (api.nachdruck as any).mockResolvedValue({});
+    (api.verkaeufe as Mock).mockResolvedValue(mockVerkaeufe);
+    (api.nachdruck as Mock).mockResolvedValue({});
   });
 
   test('should render and display receipts on initial load', async () => {
@@ -113,7 +113,7 @@ describe('Belege Component', () => {
 
   test('should display an error message if data loading fails', async () => {
     // Override the mock to simulate a failure
-    (api.verkaeufe as any).mockRejectedValue(new ApiError(500, 'Server nicht erreichbar'));
+    (api.verkaeufe as Mock).mockRejectedValue(new ApiError(500, 'Server nicht erreichbar'));
 
     render(<Belege profil={mockProfil} />);
 

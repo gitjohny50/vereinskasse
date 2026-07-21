@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, test, expect, vi, beforeEach, beforeAll } from 'vitest';
+import { describe, test, expect, vi, beforeEach, beforeAll, Mock } from 'vitest';
 import { Verkauf } from '../../pages/Verkauf';
 import { api, type Kassenprofil, ApiError } from '../../api';
 
@@ -59,7 +59,7 @@ describe('Verkauf Component', () => {
   });
 
   test('sollte den Kassieren-Button aktivieren, wenn ein Artikel hinzugefügt wird', async () => {
-    (api.artikel as any).mockResolvedValue([
+    (api.artikel as Mock).mockResolvedValue([
       { id: 101, name: 'Test-Cola', preis_cent: 1250, aktiv: true, archiviert: false },
     ]);
     render(<Verkauf profil={mockProfil} />);
@@ -77,11 +77,11 @@ describe('Verkauf Component', () => {
 
   test('sollte den kompletten Bezahlvorgang mit Barzahlung simulieren', async () => {
     const user = userEvent.setup();
-    (api.artikel as any).mockResolvedValue([
+    (api.artikel as Mock).mockResolvedValue([
       { id: 101, name: 'Test-Cola', preis_cent: 1250, aktiv: true, archiviert: false },
     ]);
     // FIX: Stellen Sie sicher, dass die Berechnung für diesen Test korrekt ist.
-    (api.berechnung as any).mockResolvedValue({ gesamt_cent: 1250, waren_cent: 1250, pfand_cent: 0 });
+    (api.berechnung as Mock).mockResolvedValue({ gesamt_cent: 1250, waren_cent: 1250, pfand_cent: 0 });
 
     render(<Verkauf profil={mockProfil} />);
 
@@ -114,11 +114,11 @@ describe('Verkauf Component', () => {
 
   test('sollte den Warenkorb leeren, wenn der Leeren-Button geklickt wird', async () => {
     const user = userEvent.setup();
-    (api.artikel as any).mockResolvedValue([
+    (api.artikel as Mock).mockResolvedValue([
       { id: 101, name: 'Kaffee', preis_cent: 200, aktiv: true, archiviert: false },
     ]);
     // FIX: Stellen Sie sicher, dass die Berechnung für diesen Test korrekt ist.
-    (api.berechnung as any).mockResolvedValue({ gesamt_cent: 1250, waren_cent: 1250, pfand_cent: 0 });
+    (api.berechnung as Mock).mockResolvedValue({ gesamt_cent: 1250, waren_cent: 1250, pfand_cent: 0 });
 
     render(<Verkauf profil={mockProfil} />);
 
@@ -138,11 +138,11 @@ describe('Verkauf Component', () => {
 
   test('sollte Artikel korrekt nach Kategorien filtern', async () => {
     const user = userEvent.setup();
-    (api.kategorien as any).mockResolvedValue([
+    (api.kategorien as Mock).mockResolvedValue([
       { id: 1, name: 'Getränke', aktiv: true },
       { id: 2, name: 'Essen', aktiv: true }
     ]);
-    (api.artikel as any).mockResolvedValue([
+    (api.artikel as Mock).mockResolvedValue([
       { id: 101, name: 'Bier', preis_cent: 300, aktiv: true, archiviert: false, kategorie_id: 1 },
       { id: 102, name: 'Bratwurst', preis_cent: 400, aktiv: true, archiviert: false, kategorie_id: 2 }
     ]);
@@ -163,7 +163,7 @@ describe('Verkauf Component', () => {
 
   test('sollte die Pfandrückgabe im Checkout-Modal korrekt durchlaufen', async () => {
     const user = userEvent.setup();
-    (api.artikel as any).mockResolvedValue([
+    (api.artikel as Mock).mockResolvedValue([
       { id: 101, name: 'Cola', preis_cent: 200, aktiv: true, archiviert: false }
     ]);
     
@@ -190,11 +190,11 @@ describe('Verkauf Component', () => {
 
   test('sollte eine Fehlermeldung anzeigen, wenn der API-Abschluss fehlschlägt', async () => {
     const user = userEvent.setup();
-    (api.artikel as any).mockResolvedValue([
+    (api.artikel as Mock).mockResolvedValue([
       { id: 101, name: 'Test-Cola', preis_cent: 1250, aktiv: true, archiviert: false },
     ]);
     
-    (api.verkaufAbschluss as any).mockRejectedValueOnce(new ApiError(500, 'Verbindung zum Server verloren.'));
+    (api.verkaufAbschluss as Mock).mockRejectedValueOnce(new ApiError(500, 'Verbindung zum Server verloren.'));
     
     render(<Verkauf profil={mockProfil} />);
 
@@ -218,11 +218,11 @@ describe('Verkauf Component', () => {
 
   test('sollte die Menge eines Artikels im Warenkorb über + und - ändern können', async () => {
     const user = userEvent.setup();
-    (api.artikel as any).mockResolvedValue([
+    (api.artikel as Mock).mockResolvedValue([
       { id: 101, name: 'Bier', preis_cent: 300, aktiv: true, archiviert: false },
     ]);
 
-    (api.berechnung as any).mockImplementation((payload: any) => {
+    (api.berechnung as Mock).mockImplementation((payload: { artikel: { menge: number }[] }) => {
       const menge = payload.artikel[0]?.menge || 0;
       const gesamt = menge * 300;
       return Promise.resolve({ gesamt_cent: gesamt, waren_cent: gesamt, pfand_cent: 0 });
@@ -250,10 +250,10 @@ describe('Verkauf Component', () => {
 
   test('sollte den Abschluss blockieren und einen Fehler zeigen, wenn zu wenig Bargeld gegeben wurde', async () => {
     const user = userEvent.setup();
-    (api.artikel as any).mockResolvedValue([
+    (api.artikel as Mock).mockResolvedValue([
       { id: 101, name: 'Pizza', preis_cent: 1200, aktiv: true, archiviert: false },
     ]);
-    (api.berechnung as any).mockResolvedValue({ gesamt_cent: 1200, waren_cent: 1200, pfand_cent: 0 });
+    (api.berechnung as Mock).mockResolvedValue({ gesamt_cent: 1200, waren_cent: 1200, pfand_cent: 0 });
     
     render(<Verkauf profil={mockProfil} />);
 
@@ -278,13 +278,13 @@ describe('Verkauf Component', () => {
 
   test('sollte den Verkauf bei Zahlung ohne Rückgeld-Berechnung sofort abschließen (z.B. EC-Karte)', async () => {
     const user = userEvent.setup();
-    (api.artikel as any).mockResolvedValue([
+    (api.artikel as Mock).mockResolvedValue([
       { id: 101, name: 'Wasser', preis_cent: 100, aktiv: true, archiviert: false },
     ]);
-    (api.zahlungsmethoden as any).mockResolvedValue([
+    (api.zahlungsmethoden as Mock).mockResolvedValue([
       { id: 2, name: 'EC-Karte', aktiv: true, rueckgeld_berechnen: false }
     ]);
-    (api.berechnung as any).mockResolvedValue({ gesamt_cent: 100, waren_cent: 100, pfand_cent: 0 });
+    (api.berechnung as Mock).mockResolvedValue({ gesamt_cent: 100, waren_cent: 100, pfand_cent: 0 });
     
     render(<Verkauf profil={mockProfil} />);
 
@@ -305,17 +305,17 @@ describe('Verkauf Component', () => {
   });
 
   test.skip('sollte den Verkauf erlauben, wenn NUR Pfand zurückgegeben wird (ohne Warenkauf)', async () => {
-    (api.berechnung as any).mockResolvedValue({ gesamt_cent: -300, pfand_cent: -300, waren_cent: 0 });
+    (api.berechnung as Mock).mockResolvedValue({ gesamt_cent: -300, pfand_cent: -300, waren_cent: 0 });
     render(<Verkauf profil={mockProfil} />);
   });
 
 test('sollte die Bargeld-Schnellwahltasten korrekt anwenden', async () => {
     const user = userEvent.setup();
-    (api.artikel as any).mockResolvedValue([
+    (api.artikel as Mock).mockResolvedValue([
       { id: 101, name: 'Bier', preis_cent: 350, aktiv: true, archiviert: false },
     ]);
-    (api.berechnung as any).mockResolvedValue({ gesamt_cent: 350, waren_cent: 350, pfand_cent: 0 });
-    (api.zahlungsmethoden as any).mockResolvedValue([
+    (api.berechnung as Mock).mockResolvedValue({ gesamt_cent: 350, waren_cent: 350, pfand_cent: 0 });
+    (api.zahlungsmethoden as Mock).mockResolvedValue([
       { id: 1, name: 'Bar', aktiv: true, rueckgeld_berechnen: true }
     ]);
     render(<Verkauf profil={mockProfil} />);

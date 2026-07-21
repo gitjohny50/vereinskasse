@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach, Mock } from 'vitest';
 import { Auswertung, type Zeitreihe } from '../../pages/Auswertung';
 import { api, type Kassenprofil, ApiError } from '../../api';
 
@@ -54,7 +54,7 @@ describe('Auswertung Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Provide a default successful response for most tests
-    (api.zeitreihe as any).mockResolvedValue(mockZeitreiheData);
+    (api.zeitreihe as Mock).mockResolvedValue(mockZeitreiheData);
   });
 
   test('should render and load initial data', async () => {
@@ -99,7 +99,7 @@ describe('Auswertung Component', () => {
 
   test('should display an error message if data loading fails', async () => {
     // Override the mock to simulate a failure for this specific test
-    (api.zeitreihe as any).mockRejectedValue(new ApiError(500, 'Datenbankfehler'));
+    (api.zeitreihe as Mock).mockRejectedValue(new ApiError(500, 'Datenbankfehler'));
 
     render(<Auswertung profil={mockProfil} />);
 
@@ -131,8 +131,8 @@ describe('Auswertung Component', () => {
 
     // The first call is for range A, the second for range B.
     // Let's check the parameters of the second call.
-    const secondCallParams = (api.zeitreihe as any).mock.calls[2][0];
-    const firstCallParams = (api.zeitreihe as any).mock.calls[0][0];
+    const secondCallParams = (api.zeitreihe as Mock).mock.calls[2][0];
+    const firstCallParams = (api.zeitreihe as Mock).mock.calls[0][0];
 
     // The 'von' (from) date of the second call should be different from the first one
     expect(secondCallParams.von).not.toEqual(firstCallParams.von);
