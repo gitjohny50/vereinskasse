@@ -162,7 +162,7 @@ def _verkauf_bon_bytes(session: Session, cfg: dict, verkauf: models.Verkauf, *, 
     )
 
 
-def druck_verkauf(session: Session, verkauf_id: int, schublade: bool, printer: PrinterAdapter | None = None) -> dict:
+def druck_verkauf(session: Session, verkauf_id: int, schublade: bool, printer: PrinterAdapter | None = None, sofort: bool = True) -> dict:
     """Reiht die Artikeltickets ein - und den Beleg (Bon) nur, wenn der
     Auto-Belegdruck aktiv ist (Einstellung ``verkauf.beleg_autodruck``).
     Ist er aus, wird bei Barzahlung die Schublade per eigenem Impuls geöffnet,
@@ -208,6 +208,9 @@ def druck_verkauf(session: Session, verkauf_id: int, schublade: bool, printer: P
     if schublade and not auto_beleg and cfg.get("schublade.aktiv", "1") == "1":
         jobs.append(enqueue(session, dokumenttyp="Schublade", payload=hw.build_drawer_pulse(cfg),
                             verkauf_id=verkauf.id, bezeichnung="Kassenschublade"))
+
+    if not sofort:
+        return {"ok": True, "auftraege": len(jobs), "tickets": len(tickets), "drucker": "warteschlange"}
 
     p = _printer(session, printer)
     ok = True

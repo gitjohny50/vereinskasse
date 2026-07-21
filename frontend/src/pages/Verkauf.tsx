@@ -99,6 +99,10 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
     setPfandRueck((p) => { const c = { ...p }; if (n <= 0) delete c[id]; else c[id] = n; return c; });
   }
   function leeren() { setWarenkorb({}); setPfandRueck({}); setGegeben(""); setFehler(null); }
+  function checkoutSchliessen() {
+    setCheckoutOpen(false);
+    setFehler(null);
+  }
   function checkoutStarten() {
     setFehler(null);
     setCheckoutStep(pfandAktiv && pfandarten.length > 0 ? "pfand-frage" : "zahlung");
@@ -155,7 +159,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
         zahlungsmethode_id: methode.id,
         gegeben_cent: methode.rueckgeld_berechnen && gegebenCent !== null ? gegebenCent : null,
       });
-      setErfolg(v); setCheckoutOpen(false); leeren();
+      setErfolg(v); setCheckoutOpen(false); setBerech(null); leeren();
     } catch (e) { setFehler(e instanceof ApiError ? e.message : "Abschluss fehlgeschlagen."); }
     finally { setBusy(false); }
   }
@@ -291,7 +295,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
                 <div className="eyebrow">Kassieren</div>
                 <strong>{formatCents(gesamt)}</strong>
               </div>
-              <button type="button" className="btn btn-sm" disabled={busy} onClick={() => setCheckoutOpen(false)}>Schließen</button>
+              <button type="button" className="btn btn-sm" onClick={checkoutSchliessen}>Schließen</button>
             </div>
 
             {checkoutStep === "pfand-frage" && (
