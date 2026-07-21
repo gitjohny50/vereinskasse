@@ -122,6 +122,7 @@ label input, label select, label textarea { font-weight: 500; color: var(--ink);
 .theme-dot.ozean { background: #0284c7; }
 .theme-dot.bernstein { background: #ea580c; }
 .theme-dot.on { border-color: var(--ink); }
+.tutorial-help { width: 38px; padding: 0; font-size: 18px; font-weight: 850; border-radius: 999px; }
 
 /* Legacy-Kopf (falls noch referenziert) */
 .masthead { max-width: 1180px; margin: 0 auto; padding: 18px 20px; display: flex; align-items: center; justify-content: space-between; }
@@ -355,6 +356,41 @@ label input, label select, label textarea { font-weight: 500; color: var(--ink);
 .modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, .45); display: grid; place-items: center; z-index: 40; padding: 16px; }
 .modal-card { width: 100%; max-width: 520px; background: var(--surface); border-radius: 18px; padding: 22px; box-shadow: var(--shadow); }
 
+/* ---------- Tutorial / Onboarding ---------- */
+.tutorial-layer { position: fixed; inset: 0; z-index: 90; pointer-events: auto; }
+.tutorial-dim { position: absolute; inset: 0; background: rgba(15, 23, 42, .58); backdrop-filter: blur(1px); }
+.tutorial-layer[data-has-target="true"] .tutorial-dim { background: transparent; backdrop-filter: none; }
+.tutorial-spotlight {
+  position: fixed;
+  z-index: 91;
+  border: 3px solid var(--accent);
+  border-radius: 14px;
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, .58), 0 0 0 6px rgba(255,255,255,.82);
+  pointer-events: none;
+}
+.tutorial-card {
+  position: fixed;
+  z-index: 92;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 20px;
+  box-shadow: var(--shadow);
+}
+.tutorial-center {
+  width: min(520px, calc(100vw - 32px));
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+.tutorial-popover { transform: none; }
+.tutorial-progress { height: 6px; margin: -2px 0 16px; overflow: hidden; border-radius: 999px; background: var(--surface-2); }
+.tutorial-progress span { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width .18s ease; }
+.tutorial-card h2 { margin-top: 6px; font-size: 24px; line-height: 1.15; letter-spacing: 0; }
+.tutorial-card p { margin: 10px 0 18px; color: var(--ink-2); font-size: 15.5px; }
+.tutorial-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.tutorial-actions .btn { min-width: 112px; }
+
 /* ---------- Responsiv ---------- */
 @media (max-width: 900px) {
   .analytics-stats { grid-template-columns: 1fr 1fr 1fr; }
@@ -385,6 +421,9 @@ label input, label select, label textarea { font-weight: 500; color: var(--ink);
   .checkout-step h2 { font-size: 24px; }
   .checkout-choice, .payment-big { min-height: 110px; }
   .modal-cash-adjust { grid-template-columns: repeat(3, 1fr); }
+  .tutorial-card { padding: 16px; }
+  .tutorial-actions { justify-content: stretch; }
+  .tutorial-actions .btn { flex: 1 1 auto; min-width: 0; }
 }
 
 @supports (height: 100svh) {
