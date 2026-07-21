@@ -181,6 +181,7 @@ export const api = {
   benutzer: () => req<Benutzer[]>("/benutzer"),
   benutzerAnlegen: (b: Body) => req<Benutzer>("/benutzer", { method: "POST", body: j(b) }),
   benutzerAendern: (id: number, b: Body) => req<Benutzer>(`/benutzer/${id}`, { method: "PUT", body: j(b) }),
+  benutzerLoeschen: (id: number) => req<void>(`/benutzer/${id}`, { method: "DELETE" }),
 
   // Vereine & Profile & Veranstaltungen
   vereine: () => req<Verein[]>("/vereine"),
