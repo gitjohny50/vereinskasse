@@ -10,6 +10,7 @@ export interface ZeitreiheBucket {
   segmente: { schluessel: string; name: string; wert_cent: number; anzahl: number; menge: number }[];
 }
 
+
 export interface Zeitreihe {
   summe: {
     umsatz_cent: number;
