@@ -53,7 +53,7 @@ jobs:
           ./osv-scanner -L ${{ runner.temp }}/backend.cdx.json
 
   ####################
-  #   FRONTEND JOB   #
+  #  FRONTEND JOB    #
   ####################
   frontend-ci:
     runs-on: ubuntu-latest
@@ -90,8 +90,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint with ESLint
+      - name: Linter ausführen
         run: npm run lint
+
+      - name: Frontend Tests ausführen
+        run: npm run test
 
       - name: Build project
         run: npm run build
