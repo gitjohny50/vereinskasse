@@ -6,13 +6,13 @@ Nachdruck.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .. import sales
 from .. import print_queue
 from ..auth import require_bediener
-from ..database import get_session
+from ..database import SessionLocal, get_session
 from ..models import Benutzer, Verkauf
 from ..timeutils import as_utc
 from ..schemas import (
@@ -40,8 +40,13 @@ def berechnung(payload: BerechnungIn, session: Session = Depends(get_session)) -
     return BerechnungOut(**calc)
 
 
+def _druck_nach_verkauf() -> None:
+    with SessionLocal() as session:
+        print_queue.verarbeite_offene(session)
+
+
 @router.post("", response_model=VerkaufOut, status_code=201)
-def abschliessen(payload: VerkaufIn, session: Session = Depends(get_session),
+def abschliessen(payload: VerkaufIn, background_tasks: BackgroundTasks, session: Session = Depends(get_session),
                  benutzer: Benutzer = Depends(require_bediener)) -> VerkaufOut:
     verkauf = sales.finalisiere(
         session, kassenprofil_id=payload.kassenprofil_id, veranstaltung_id=payload.veranstaltung_id,
@@ -49,6 +54,7 @@ def abschliessen(payload: VerkaufIn, session: Session = Depends(get_session),
         pfand_rueckgaben=[r.model_dump() for r in payload.pfand_rueckgaben],
         zahlungsmethode_id=payload.zahlungsmethode_id, gegeben_cent=payload.gegeben_cent, benutzer=benutzer,
     )
+    background_tasks.add_task(_druck_nach_verkauf)
     return _verkauf_out(verkauf)
 
 

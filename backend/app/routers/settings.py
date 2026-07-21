@@ -41,8 +41,16 @@ def _logo_out(session: Session) -> BonLogoOut:
 
 @router.get("", response_model=list[SettingOut])
 def liste(session: Session = Depends(get_session)) -> list[SettingOut]:
-    rows = session.query(Systemeinstellung).order_by(Systemeinstellung.schluessel).all()
-    return [SettingOut(schluessel=r.schluessel, wert=r.wert, beschreibung=r.beschreibung) for r in rows]
+    rows = {row.schluessel: row for row in session.query(Systemeinstellung).all()}
+    result: list[SettingOut] = []
+    for key, default in sorted(DEFAULT_HW_SETTINGS.items()):
+        row = rows.get(key)
+        result.append(SettingOut(
+            schluessel=key,
+            wert=row.wert if row else default,
+            beschreibung=row.beschreibung if row else "",
+        ))
+    return result
 
 
 @router.put("/{schluessel}", response_model=SettingOut)

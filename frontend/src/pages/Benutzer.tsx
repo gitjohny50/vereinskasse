@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { api, ApiError, type Benutzer as B, type Rolle } from "../api";
+import { tutorialKey } from "../components/TutorialData";
 
 export function Benutzer() {
   const [liste, setListe] = useState<B[]>([]);
@@ -9,6 +10,8 @@ export function Benutzer() {
   const [pin, setPin] = useState("");
   const [rolleId, setRolleId] = useState<number | "">("");
   const [pinReset, setPinReset] = useState<{ id: number; pin: string } | null>(null);
+  const [hinweis, setHinweis] = useState<string | null>(null);
+  const [loeschtId, setLoeschtId] = useState<number | null>(null);
 
   const laden = useCallback(async () => {
     const [bs, rs] = await Promise.all([api.benutzer(), api.rollen()]);
@@ -35,6 +38,20 @@ export function Benutzer() {
 
   async function rolleAendern(b: B, neu: number) { await api.benutzerAendern(b.id, { rolle_id: neu }); await laden(); }
   async function aktivUmschalten(b: B) { await api.benutzerAendern(b.id, { aktiv: !b.aktiv }); await laden(); }
+  async function loeschen(b: B) {
+    const ok = window.confirm(`Benutzer "${b.name}" wirklich löschen?\n\nDas ist nur möglich, wenn noch keine Verkäufe oder Abschlüsse mit diesem Benutzer verknüpft sind.`);
+    if (!ok) return;
+    setLoeschtId(b.id);
+    try {
+      await api.benutzerLoeschen(b.id);
+      setFehler(null);
+      await laden();
+    } catch (e) {
+      setFehler(e instanceof ApiError ? e.message : "Benutzer konnte nicht gelöscht werden.");
+    } finally {
+      setLoeschtId(null);
+    }
+  }
   async function pinSpeichern() {
     if (!pinReset) return;
     if (!/^\d{4,}$/.test(pinReset.pin)) { setFehler("Neue PIN muss mindestens 4 Ziffern haben."); return; }
@@ -44,12 +61,17 @@ export function Benutzer() {
       await laden();
     } catch (e) { setFehler(e instanceof ApiError ? e.message : "PIN-Änderung fehlgeschlagen."); }
   }
+  function tutorialZuruecksetzen(b: B) {
+    localStorage.removeItem(tutorialKey(b.id));
+    setHinweis(`Tutorial für ${b.name} auf diesem Gerät zurückgesetzt.`);
+  }
 
   return (
     <section>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-end", marginBottom: 16 }}>
         <div><div className="eyebrow">Verwaltung</div><strong style={{ fontSize: 17 }}>Benutzer</strong></div>
       </div>
+      {hinweis && <p className="note" style={{ marginBottom: 12 }}>{hinweis}</p>}
 
       <div className="formular" style={{ marginBottom: 16 }}>
         <div className="feld-grid">
@@ -66,7 +88,7 @@ export function Benutzer() {
       </div>
 
       <table className="tabelle">
-        <thead><tr><th>Name</th><th>Rolle</th><th>Aktiv</th><th className="num">Aktionen</th></tr></thead>
+        <thead><tr><th>Name</th><th>Rolle</th><th>Aktiv</th><th>Tutorial</th><th className="num">Aktionen</th></tr></thead>
         <tbody>
           {liste.map((b) => (
             <tr key={b.id} style={{ opacity: b.aktiv ? 1 : 0.55 }}>
@@ -81,6 +103,7 @@ export function Benutzer() {
                   <span className={`toggle-track ${b.aktiv ? "on" : ""}`}><span className="toggle-knob" /></span>
                 </button>
               </td>
+              <td><button className="btn btn-sm" onClick={() => tutorialZuruecksetzen(b)}>Erneut anzeigen</button></td>
               <td className="num">
                 {pinReset?.id === b.id ? (
                   <span className="row" style={{ gap: 8, justifyContent: "flex-end" }}>
@@ -90,12 +113,17 @@ export function Benutzer() {
                     <button className="btn btn-sm" onClick={() => setPinReset(null)}>Abbrechen</button>
                   </span>
                 ) : (
-                  <button className="btn btn-sm" onClick={() => { setFehler(null); setPinReset({ id: b.id, pin: "" }); }}>PIN zurücksetzen</button>
+                  <>
+                    <button className="btn btn-sm" onClick={() => { setFehler(null); setPinReset({ id: b.id, pin: "" }); }}>PIN zurücksetzen</button>
+                    <button className="btn btn-sm btn-danger" disabled={loeschtId === b.id} onClick={() => loeschen(b)}>
+                      {loeschtId === b.id ? "Lösche…" : "Löschen"}
+                    </button>
+                  </>
                 )}
               </td>
             </tr>
           ))}
-          {liste.length === 0 && <tr><td colSpan={4} style={{ color: "var(--muted)" }}>Noch keine Benutzer.</td></tr>}
+          {liste.length === 0 && <tr><td colSpan={5} style={{ color: "var(--muted)" }}>Noch keine Benutzer.</td></tr>}
         </tbody>
       </table>
       <p style={{ color: "var(--muted)", fontSize: 13, marginTop: 12 }}>

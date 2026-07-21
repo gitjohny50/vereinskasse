@@ -11,7 +11,7 @@ noch keine produktive, rechtskonforme Inbetriebnahme (siehe Lastenheft 26).
 
 ```bash
 sudo apt update && sudo apt full-upgrade -y
-sudo apt install -y python3-venv python3-pip nodejs npm chromium-browser xserver-xorg xinit unclutter curl
+sudo apt install -y python3-venv python3-pip nodejs npm chromium-browser xserver-xorg xinit unclutter curl avahi-daemon avahi-utils chrony network-manager
 ```
 
 - Dedizierten Benutzer `kasse` anlegen (falls nicht vorhanden):
@@ -30,6 +30,16 @@ sudo mkdir -p /opt/vereinskasse /opt/vereinskasse-daten
 sudo cp -r vereinskasse/* /opt/vereinskasse/
 sudo chown -R kasse:kasse /opt/vereinskasse /opt/vereinskasse-daten
 ```
+
+Lokalen Netzwerknamen und mDNS einrichten:
+
+```bash
+sudo /opt/vereinskasse/deploy/network/setup-pi-network.sh kasse
+```
+
+Danach ist die Oberfläche im LAN über `http://kasse.local:8000` erreichbar.
+Details zum optionalen iPad-Zugang ohne externes Netzwerk stehen in
+`docs/NETZWERKFUNKTION.md`.
 
 ## 3. Backend einrichten
 

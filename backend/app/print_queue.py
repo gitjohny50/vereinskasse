@@ -162,7 +162,7 @@ def _verkauf_bon_bytes(session: Session, cfg: dict, verkauf: models.Verkauf, *, 
     )
 
 
-def druck_verkauf(session: Session, verkauf_id: int, schublade: bool, printer: PrinterAdapter | None = None) -> dict:
+def druck_verkauf(session: Session, verkauf_id: int, schublade: bool, printer: PrinterAdapter | None = None, sofort: bool = True) -> dict:
     """Reiht die Artikeltickets ein - und den Beleg (Bon) nur, wenn der
     Auto-Belegdruck aktiv ist (Einstellung ``verkauf.beleg_autodruck``).
     Ist er aus, wird bei Barzahlung die Schublade per eigenem Impuls geöffnet,
@@ -177,6 +177,10 @@ def druck_verkauf(session: Session, verkauf_id: int, schublade: bool, printer: P
     profil = session.get(models.Kassenprofil, verkauf.kassenprofil_id)
     verein = session.get(models.Verein, profil.verein_id) if profil else None
     verein_name = verein.name if verein else ""
+    ticket_kopf = verein_name
+    if profil:
+        zeit = hw.to_local(verkauf.zeitpunkt).strftime("%d.%m.%Y %H:%M")
+        ticket_kopf = "\n".join([z for z in [verein_name, f"{profil.name} {zeit}".strip()] if z])
 
     jobs: list[models.Druckauftrag] = []
 
@@ -189,16 +193,24 @@ def druck_verkauf(session: Session, verkauf_id: int, schublade: bool, printer: P
     # im Druckprotokoll und lässt sich einzeln wiederholen; ein hängendes Ticket
     # blockiert die übrigen nicht mehr. Der Vereinsname steht als Kopfzeile darauf.
     tickets = hw._ticket_liste(positionen)
-    for bez in tickets:
-        payload = hw.build_ticket_bytes(cfg, bez, verkauf.belegnummer, kopf=verein_name)
+    for ticket in tickets:
+        payload = hw.build_ticket_bytes(
+            cfg,
+            ticket["bezeichnung"],
+            verkauf.belegnummer,
+            kopf=ticket_kopf,
+        )
         jobs.append(enqueue(session, dokumenttyp="Artikelticket", payload=payload,
-                            verkauf_id=verkauf.id, bezeichnung=bez))
+                            verkauf_id=verkauf.id, bezeichnung=ticket["bezeichnung"]))
 
     # Schublade nur separat öffnen, wenn kein Bon gedruckt wird (der Bon enthält
     # den Kick bereits) und die Zahlungsart die Schublade vorsieht.
     if schublade and not auto_beleg and cfg.get("schublade.aktiv", "1") == "1":
         jobs.append(enqueue(session, dokumenttyp="Schublade", payload=hw.build_drawer_pulse(cfg),
                             verkauf_id=verkauf.id, bezeichnung="Kassenschublade"))
+
+    if not sofort:
+        return {"ok": True, "auftraege": len(jobs), "tickets": len(tickets), "drucker": "warteschlange"}
 
     p = _printer(session, printer)
     ok = True

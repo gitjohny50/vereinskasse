@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import base64
 import binascii
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -23,7 +23,7 @@ from ..models import (
     Verkauf,
 )
 from ..money import format_cents
-from ..timeutils import to_local
+from ..timeutils import now_local, to_local
 from .escpos import EscposBuilder
 from .factory import DEFAULT_HW_SETTINGS, build_printer
 from .printer_base import PrinterStatus
@@ -75,7 +75,7 @@ def build_test_page(cfg: dict[str, str]) -> bytes:
     qr_url = cfg.get("diagnose.testseite.qr_url", "").strip()
     if qr_url:
         b.qr(qr_url, module_size=6)
-    b.feed(1).line("Zeit: " + datetime.now(timezone.utc).astimezone().strftime("%d.%m.%Y %H:%M:%S"))
+    b.feed(1).line("Zeit: " + now_local().strftime("%d.%m.%Y %H:%M:%S"))
     b.cut(mode=cfg.get("schnitt.modus", "partial"), feed_lines=int(cfg.get("schnitt.vorschub_zeilen", "3")))
     return b.build()
 
@@ -85,7 +85,7 @@ def build_cut_test(cfg: dict[str, str], count: int = 3) -> bytes:
     b = _builder(cfg)
     b.init()
     mode = cfg.get("schnitt.modus", "partial")
-    feed = int(cfg.get("schnitt.vorschub_zeilen", "3"))
+    feed = int(cfg.get("artikelticket.vorschub_zeilen", cfg.get("schnitt.vorschub_zeilen", "1")))
     for i in range(1, count + 1):
         b.align("center").bold(True).size(2, 2).line(f"TICKET {i}/{count}")
         b.size(1, 1).bold(False).line("Schnitt-Test")
@@ -99,17 +99,29 @@ def build_startup_receipt(cfg: dict[str, str], info: dict[str, str | list[str]])
     urls = info.get("urls", [])
     if not isinstance(urls, list):
         urls = []
+    users = info.get("users", [])
+    if not isinstance(users, list):
+        users = []
+    qr_url = str(urls[0]) if urls else ""
     b = _builder(cfg)
     b.init()
     b.align("center").bold(True).size(1, 2).line("VEREINSKASSE").size(1, 1)
-    b.line("Backend gestartet").bold(False).feed(1)
+    b.line("Systemstart erfolgreich").bold(False)
+    b.line(str(info.get("zeit", "-"))).feed(1)
+    if qr_url:
+        b.qr(qr_url, module_size=5)
+        b.feed(1)
     b.align("left")
     b.line("-" * width)
     for label, key in [
-        ("Zeit:", "zeit"),
+        ("Backend:", "backend"),
+        ("Frontend:", "frontend"),
+        ("Datenbank:", "datenbank"),
         ("Host:", "hostname"),
-        ("User:", "user"),
+        ("Linux-User:", "user"),
         ("Version:", "version"),
+        ("Internet:", "internet"),
+        ("mDNS:", "mdns"),
         ("Profil:", "profil"),
         ("Daten:", "data_dir"),
         ("Drucker:", "drucker"),
@@ -124,11 +136,16 @@ def build_startup_receipt(cfg: dict[str, str], info: dict[str, str | list[str]])
     else:
         b.line("Keine Netzwerkadresse gefunden")
     b.line("-" * width)
-    b.align("center")
-    qr_url = str(urls[0]) if urls else ""
-    if qr_url:
-        b.qr(qr_url, module_size=5)
-    b.feed(1).line("Bereit fuer Verkauf")
+    b.bold(True).line("Angelegte Benutzer:").bold(False)
+    if users:
+        for user in users[:24]:
+            b.line(str(user))
+        if len(users) > 24:
+            b.line(f"... {len(users) - 24} weitere")
+    else:
+        b.line("Keine Benutzer gefunden")
+    b.line("-" * width)
+    b.align("center").bold(True).line("Bereit fuer Verkauf").bold(False)
     b.cut(mode=cfg.get("schnitt.modus", "partial"), feed_lines=int(cfg.get("schnitt.vorschub_zeilen", "3")))
     return b.build()
 
@@ -284,32 +301,41 @@ def build_receipt_bytes(
     return b.build()
 
 
-def _ticket_liste(positionen: list[dict]) -> list[str]:
+def _ticket_name(bezeichnung: str) -> str:
+    if bezeichnung.startswith("Pfand: "):
+        return "Pfand " + bezeichnung.removeprefix("Pfand: ")
+    return bezeichnung
+
+
+def _ticket_liste(positionen: list[dict]) -> list[dict]:
     """Erzeugt aus den Positionen die einzelnen Artikeltickets (Lastenheft 14.3):
     pro_stueck -> ein Ticket je Stück, pro_position -> ein Ticket je Position,
     kein -> keine Tickets."""
-    tickets: list[str] = []
+    tickets: list[dict] = []
     for p in positionen:
         modus = p.get("artikelticket_modus", "kein")
+        name = _ticket_name(p["bezeichnung"])
         if modus == "pro_stueck":
-            tickets.extend([p["bezeichnung"]] * p["menge"])
+            tickets.extend([{"bezeichnung": name}] * p["menge"])
         elif modus == "pro_position":
-            bez = p["bezeichnung"] if p["menge"] == 1 else f'{p["bezeichnung"]} x{p["menge"]}'
-            tickets.append(bez)
+            bez = name if p["menge"] == 1 else f'{name} x{p["menge"]}'
+            tickets.append({"bezeichnung": bez})
     return tickets
 
 
-def build_tickets_bytes(cfg: dict[str, str], tickets: list[str], belegnummer: str) -> bytes | None:
+def build_tickets_bytes(cfg: dict[str, str], tickets: list[dict], belegnummer: str) -> bytes | None:
     if not tickets:
         return None
     b = _builder(cfg)
     b.init()
-    for bez in tickets:
-        _ticket_block(b, cfg, bez, belegnummer)
+    for ticket in tickets:
+        _ticket_block(b, cfg, ticket["bezeichnung"], belegnummer)
     return b.build()
 
 
-def build_ticket_bytes(cfg: dict[str, str], bezeichnung: str, belegnummer: str, kopf: str = "") -> bytes:
+def build_ticket_bytes(
+    cfg: dict[str, str], bezeichnung: str, belegnummer: str, kopf: str = ""
+) -> bytes:
     """Ein einzelnes Artikelticket für getrennte Druckaufträge je Artikel.
 
     ``kopf`` erscheint klein über dem Artikelnamen, z. B. Vereins- oder Veranstaltungsname.
@@ -319,27 +345,35 @@ def build_ticket_bytes(cfg: dict[str, str], bezeichnung: str, belegnummer: str, 
     _ticket_block(b, cfg, bezeichnung, belegnummer, kopf)
     return b.build()
 
-def _ticket_block(b: EscposBuilder, cfg: dict[str, str], bezeichnung: str, belegnummer: str, kopf: str = "") -> None:
+def _ticket_block(
+    b: EscposBuilder,
+    cfg: dict[str, str],
+    bezeichnung: str,
+    belegnummer: str,
+    kopf: str = "",
+) -> None:
     mode = cfg.get("schnitt.modus", "partial")
-    feed = int(cfg.get("schnitt.vorschub_zeilen", "3"))
+    try:
+        feed = max(0, int(cfg.get("artikelticket.vorschub_zeilen", "0")))
+    except ValueError:
+        feed = 0
+    kopfzeilen = [zeile.strip() for zeile in (kopf or "Vereinskasse").split("\n") if zeile.strip()]
+    verein = kopfzeilen[0] if kopfzeilen else "Vereinskasse"
+    details = kopfzeilen[1:]
 
     b.align("center")
-
-    for zeile in (kopf or "Vereinskasse").split("\n"):
-        if zeile.strip():
-            b.bold(False).size(1, 1).line(zeile.strip())
-
+    b.bold(False).size(1, 1).line(verein)
     b.bold(True).size(2, 2).line(bezeichnung)
-    # Einige ESC/POS-Drucker verschlucken nach doppelter Hoehe sonst den Anfang der Folgezeile.
     b.bold(False).size(1, 1).feed(1)
-    b.line(f"Beleg {belegnummer}")
+    detail = " ".join(details).strip()
+    b.line(f"{detail}  -{belegnummer}-" if detail else f"-{belegnummer}-")
     b.cut(mode=mode, feed_lines=feed)
 
 def _pos_dicts(verkauf: Verkauf) -> list[dict]:
     return [
         {
             "bezeichnung": p.bezeichnung, "menge": p.menge, "gesamt_cent": p.gesamt_cent,
-            "artikelticket_modus": p.artikelticket_modus, "typ": p.typ,
+            "einzelpreis_cent": p.einzelpreis_cent, "artikelticket_modus": p.artikelticket_modus, "typ": p.typ,
         }
         for p in verkauf.positionen
     ]
