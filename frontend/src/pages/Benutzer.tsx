@@ -9,6 +9,7 @@ export function Benutzer() {
   const [pin, setPin] = useState("");
   const [rolleId, setRolleId] = useState<number | "">("");
   const [pinReset, setPinReset] = useState<{ id: number; pin: string } | null>(null);
+  const [loeschtId, setLoeschtId] = useState<number | null>(null);
 
   const laden = useCallback(async () => {
     const [bs, rs] = await Promise.all([api.benutzer(), api.rollen()]);
@@ -35,6 +36,20 @@ export function Benutzer() {
 
   async function rolleAendern(b: B, neu: number) { await api.benutzerAendern(b.id, { rolle_id: neu }); await laden(); }
   async function aktivUmschalten(b: B) { await api.benutzerAendern(b.id, { aktiv: !b.aktiv }); await laden(); }
+  async function loeschen(b: B) {
+    const ok = window.confirm(`Benutzer "${b.name}" wirklich löschen?\n\nDas ist nur möglich, wenn noch keine Verkäufe oder Abschlüsse mit diesem Benutzer verknüpft sind.`);
+    if (!ok) return;
+    setLoeschtId(b.id);
+    try {
+      await api.benutzerLoeschen(b.id);
+      setFehler(null);
+      await laden();
+    } catch (e) {
+      setFehler(e instanceof ApiError ? e.message : "Benutzer konnte nicht gelöscht werden.");
+    } finally {
+      setLoeschtId(null);
+    }
+  }
   async function pinSpeichern() {
     if (!pinReset) return;
     if (!/^\d{4,}$/.test(pinReset.pin)) { setFehler("Neue PIN muss mindestens 4 Ziffern haben."); return; }
@@ -90,7 +105,12 @@ export function Benutzer() {
                     <button className="btn btn-sm" onClick={() => setPinReset(null)}>Abbrechen</button>
                   </span>
                 ) : (
-                  <button className="btn btn-sm" onClick={() => { setFehler(null); setPinReset({ id: b.id, pin: "" }); }}>PIN zurücksetzen</button>
+                  <>
+                    <button className="btn btn-sm" onClick={() => { setFehler(null); setPinReset({ id: b.id, pin: "" }); }}>PIN zurücksetzen</button>
+                    <button className="btn btn-sm btn-danger" disabled={loeschtId === b.id} onClick={() => loeschen(b)}>
+                      {loeschtId === b.id ? "Lösche…" : "Löschen"}
+                    </button>
+                  </>
                 )}
               </td>
             </tr>
