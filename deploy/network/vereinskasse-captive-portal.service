@@ -1,0 +1,15 @@
+[Unit]
+Description=Vereinskasse Captive Portal Redirect
+After=network-online.target vereinskasse-backend.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=VK_CAPTIVE_TARGET=http://__HOSTNAME__.local:8000
+ExecStart=/usr/bin/python3 __PROJECT_DIR__/deploy/network/captive-portal.py
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
