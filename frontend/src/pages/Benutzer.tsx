@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { api, ApiError, type Benutzer as B, type Rolle } from "../api";
-import { tutorialKey } from "../components/Tutorial";
+import { tutorialKey } from "../components/TutorialData";
 
 export function Benutzer() {
   const [liste, setListe] = useState<B[]>([]);
@@ -11,6 +11,7 @@ export function Benutzer() {
   const [rolleId, setRolleId] = useState<number | "">("");
   const [pinReset, setPinReset] = useState<{ id: number; pin: string } | null>(null);
   const [hinweis, setHinweis] = useState<string | null>(null);
+  const [loeschtId, setLoeschtId] = useState<number | null>(null);
 
   const laden = useCallback(async () => {
     const [bs, rs] = await Promise.all([api.benutzer(), api.rollen()]);

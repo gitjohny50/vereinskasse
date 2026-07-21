@@ -300,6 +300,15 @@ label input, label select, label textarea { font-weight: 500; color: var(--ink);
 .modal-cash-adjust { width: min(620px, 100%); align-self: center; grid-template-columns: repeat(5, 1fr); }
 .cash-manual { width: min(360px, 100%); align-self: center; }
 .rueckgeld-modal { width: min(420px, 100%); align-self: center; font-size: 18px; }
+.rueckgeld-panel { width: min(620px, 100%); align-self: center; display: flex; flex-direction: column; gap: 10px; }
+.rueckgeld-panel .rueckgeld-modal { width: 100%; }
+.stueckelung-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 8px; }
+.stueckelung-chip { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); font-weight: 750; font-variant-numeric: tabular-nums; }
+.stueckelung-chip span { color: var(--muted); font-size: 13px; }
+.stueckelung-chip strong { color: var(--ink); font-size: 17px; }
+.stueckelung-chip.schein { background: #eff6ff; border-color: #bfdbfe; }
+.stueckelung-chip.muenze { background: #f8fafc; border-color: var(--border-stark); }
+.stueckelung-passend { padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); font-weight: 700; text-align: center; }
 .cash-hint { margin: -6px 0 0; color: var(--muted); text-align: center; font-size: 14px; font-weight: 650; }
 
 /* ---------- Info-/Struktur-Panels ---------- */

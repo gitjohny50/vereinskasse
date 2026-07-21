@@ -13,9 +13,11 @@ Group=kasse
 WorkingDirectory=/opt/vereinskasse/backend
 # Datenverzeichnis auf der NVMe-SSD (Lastenheft 4.1, 5.3).
 Environment=VK_DATA_DIR=/opt/vereinskasse-daten
-Environment=VK_HOST=127.0.0.1
+Environment=VK_HOST=0.0.0.0
 Environment=VK_PORT=8000
-ExecStart=/opt/vereinskasse/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Environment=VK_MDNS_NAME=kasse
+Environment=VK_TIMEZONE=Europe/Berlin
+ExecStart=/opt/vereinskasse/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=2
 # Absicherung

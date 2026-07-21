@@ -7,6 +7,8 @@ import {
 
 type CheckoutStep = "pfand-frage" | "pfand-auswahl" | "zahlung" | "bar";
 
+const EURO_STUECKELUNG = [5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5, 2, 1];
+
 export function Verkauf({ profil }: { profil: Kassenprofil }) {
   const [kategorien, setKategorien] = useState<Kategorie[]>([]);
   const [artikel, setArtikel] = useState<Artikel[]>([]);
@@ -74,6 +76,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
   const gesamt = berech?.gesamt_cent ?? 0;
   const gegebenCent = euroToCents(gegeben);
   const rueckgeld = zahlart?.rueckgeld_berechnen && gegebenCent !== null && gegebenCent >= gesamt ? gegebenCent - gesamt : null;
+  const rueckgeldStueckelung = useMemo(() => berechneStueckelung(rueckgeld ?? 0), [rueckgeld]);
   const kannKassieren = !busy && (gesamt !== 0 || pfandItems.length > 0);
   const offenePositionen = artikelItems.reduce((sum, i) => sum + i.menge, 0) + pfandItems.reduce((sum, i) => sum + i.menge, 0);
   const cashPresets = useMemo(() => {
@@ -99,6 +102,10 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
     setPfandRueck((p) => { const c = { ...p }; if (n <= 0) delete c[id]; else c[id] = n; return c; });
   }
   function leeren() { setWarenkorb({}); setPfandRueck({}); setGegeben(""); setFehler(null); }
+  function checkoutSchliessen() {
+    setCheckoutOpen(false);
+    setFehler(null);
+  }
   function checkoutStarten() {
     setFehler(null);
     setCheckoutStep(pfandAktiv && pfandarten.length > 0 ? "pfand-frage" : "zahlung");
@@ -155,7 +162,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
         zahlungsmethode_id: methode.id,
         gegeben_cent: methode.rueckgeld_berechnen && gegebenCent !== null ? gegebenCent : null,
       });
-      setErfolg(v); setCheckoutOpen(false); leeren();
+      setErfolg(v); setCheckoutOpen(false); setBerech(null); leeren();
     } catch (e) { setFehler(e instanceof ApiError ? e.message : "Abschluss fehlgeschlagen."); }
     finally { setBusy(false); }
   }
@@ -291,7 +298,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
                 <div className="eyebrow">Kassieren</div>
                 <strong>{formatCents(gesamt)}</strong>
               </div>
-              <button type="button" className="btn btn-sm" disabled={busy} onClick={() => setCheckoutOpen(false)}>Schließen</button>
+              <button type="button" className="btn btn-sm" onClick={checkoutSchliessen}>Schließen</button>
             </div>
 
             {checkoutStep === "pfand-frage" && (
@@ -385,7 +392,23 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
                 <label className="cash-manual">Manuell eingeben (€)
                   <input value={gegeben} onChange={(e) => setGegeben(e.target.value)} inputMode="decimal" placeholder="z. B. 20,00" />
                 </label>
-                {rueckgeld !== null && <div className="rueckgeld rueckgeld-modal">Rückgeld: <strong>{formatCents(rueckgeld)}</strong></div>}
+                {rueckgeld !== null && (
+                  <div className="rueckgeld-panel">
+                    <div className="rueckgeld rueckgeld-modal">Rückgeld: <strong>{formatCents(rueckgeld)}</strong></div>
+                    {rueckgeld > 0 ? (
+                      <div className="stueckelung-grid" aria-label="Empfohlene Rückgeld-Stückelung">
+                        {rueckgeldStueckelung.map((s) => (
+                          <div key={s.wert} className={s.wert >= 500 ? "stueckelung-chip schein" : "stueckelung-chip muenze"}>
+                            <span>{s.anzahl}×</span>
+                            <strong>{formatCents(s.wert)}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="stueckelung-passend">Passend gegeben, kein Rückgeld.</div>
+                    )}
+                  </div>
+                )}
                 {gegebenCent === null && <p className="cash-hint">Ohne Eingabe wird passend kassiert.</p>}
                 {fehler && <p className="login-error">{fehler}</p>}
                 <div className="checkout-footer-actions">
@@ -401,6 +424,19 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
       )}
     </section>
   );
+}
+
+function berechneStueckelung(betragCent: number) {
+  let rest = Math.max(0, betragCent);
+  const result: { wert: number; anzahl: number }[] = [];
+  for (const wert of EURO_STUECKELUNG) {
+    const anzahl = Math.floor(rest / wert);
+    if (anzahl > 0) {
+      result.push({ wert, anzahl });
+      rest -= anzahl * wert;
+    }
+  }
+  return result;
 }
 
 function SwipeKorbZeile({ children, onRemove }: { children: ReactNode; onRemove: () => void }) {

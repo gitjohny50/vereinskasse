@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import base64
 import binascii
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -23,7 +23,7 @@ from ..models import (
     Verkauf,
 )
 from ..money import format_cents
-from ..timeutils import to_local
+from ..timeutils import now_local, to_local
 from .escpos import EscposBuilder
 from .factory import DEFAULT_HW_SETTINGS, build_printer
 from .printer_base import PrinterStatus
@@ -75,7 +75,7 @@ def build_test_page(cfg: dict[str, str]) -> bytes:
     qr_url = cfg.get("diagnose.testseite.qr_url", "").strip()
     if qr_url:
         b.qr(qr_url, module_size=6)
-    b.feed(1).line("Zeit: " + datetime.now(timezone.utc).astimezone().strftime("%d.%m.%Y %H:%M:%S"))
+    b.feed(1).line("Zeit: " + now_local().strftime("%d.%m.%Y %H:%M:%S"))
     b.cut(mode=cfg.get("schnitt.modus", "partial"), feed_lines=int(cfg.get("schnitt.vorschub_zeilen", "3")))
     return b.build()
 
@@ -99,17 +99,29 @@ def build_startup_receipt(cfg: dict[str, str], info: dict[str, str | list[str]])
     urls = info.get("urls", [])
     if not isinstance(urls, list):
         urls = []
+    users = info.get("users", [])
+    if not isinstance(users, list):
+        users = []
+    qr_url = str(urls[0]) if urls else ""
     b = _builder(cfg)
     b.init()
     b.align("center").bold(True).size(1, 2).line("VEREINSKASSE").size(1, 1)
-    b.line("Backend gestartet").bold(False).feed(1)
+    b.line("Systemstart erfolgreich").bold(False)
+    b.line(str(info.get("zeit", "-"))).feed(1)
+    if qr_url:
+        b.qr(qr_url, module_size=5)
+        b.feed(1)
     b.align("left")
     b.line("-" * width)
     for label, key in [
-        ("Zeit:", "zeit"),
+        ("Backend:", "backend"),
+        ("Frontend:", "frontend"),
+        ("Datenbank:", "datenbank"),
         ("Host:", "hostname"),
-        ("User:", "user"),
+        ("Linux-User:", "user"),
         ("Version:", "version"),
+        ("Internet:", "internet"),
+        ("mDNS:", "mdns"),
         ("Profil:", "profil"),
         ("Daten:", "data_dir"),
         ("Drucker:", "drucker"),
@@ -124,11 +136,16 @@ def build_startup_receipt(cfg: dict[str, str], info: dict[str, str | list[str]])
     else:
         b.line("Keine Netzwerkadresse gefunden")
     b.line("-" * width)
-    b.align("center")
-    qr_url = str(urls[0]) if urls else ""
-    if qr_url:
-        b.qr(qr_url, module_size=5)
-    b.feed(1).line("Bereit fuer Verkauf")
+    b.bold(True).line("Angelegte Benutzer:").bold(False)
+    if users:
+        for user in users[:24]:
+            b.line(str(user))
+        if len(users) > 24:
+            b.line(f"... {len(users) - 24} weitere")
+    else:
+        b.line("Keine Benutzer gefunden")
+    b.line("-" * width)
+    b.align("center").bold(True).line("Bereit fuer Verkauf").bold(False)
     b.cut(mode=cfg.get("schnitt.modus", "partial"), feed_lines=int(cfg.get("schnitt.vorschub_zeilen", "3")))
     return b.build()
 
