@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { api, ApiError, type Benutzer as B, type Rolle } from "../api";
+import { tutorialKey } from "../components/Tutorial";
 
 export function Benutzer() {
   const [liste, setListe] = useState<B[]>([]);
@@ -9,7 +10,7 @@ export function Benutzer() {
   const [pin, setPin] = useState("");
   const [rolleId, setRolleId] = useState<number | "">("");
   const [pinReset, setPinReset] = useState<{ id: number; pin: string } | null>(null);
-  const [loeschtId, setLoeschtId] = useState<number | null>(null);
+  const [hinweis, setHinweis] = useState<string | null>(null);
 
   const laden = useCallback(async () => {
     const [bs, rs] = await Promise.all([api.benutzer(), api.rollen()]);
@@ -59,12 +60,17 @@ export function Benutzer() {
       await laden();
     } catch (e) { setFehler(e instanceof ApiError ? e.message : "PIN-Änderung fehlgeschlagen."); }
   }
+  function tutorialZuruecksetzen(b: B) {
+    localStorage.removeItem(tutorialKey(b.id));
+    setHinweis(`Tutorial für ${b.name} auf diesem Gerät zurückgesetzt.`);
+  }
 
   return (
     <section>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-end", marginBottom: 16 }}>
         <div><div className="eyebrow">Verwaltung</div><strong style={{ fontSize: 17 }}>Benutzer</strong></div>
       </div>
+      {hinweis && <p className="note" style={{ marginBottom: 12 }}>{hinweis}</p>}
 
       <div className="formular" style={{ marginBottom: 16 }}>
         <div className="feld-grid">
@@ -81,7 +87,7 @@ export function Benutzer() {
       </div>
 
       <table className="tabelle">
-        <thead><tr><th>Name</th><th>Rolle</th><th>Aktiv</th><th className="num">Aktionen</th></tr></thead>
+        <thead><tr><th>Name</th><th>Rolle</th><th>Aktiv</th><th>Tutorial</th><th className="num">Aktionen</th></tr></thead>
         <tbody>
           {liste.map((b) => (
             <tr key={b.id} style={{ opacity: b.aktiv ? 1 : 0.55 }}>
@@ -96,6 +102,7 @@ export function Benutzer() {
                   <span className={`toggle-track ${b.aktiv ? "on" : ""}`}><span className="toggle-knob" /></span>
                 </button>
               </td>
+              <td><button className="btn btn-sm" onClick={() => tutorialZuruecksetzen(b)}>Erneut anzeigen</button></td>
               <td className="num">
                 {pinReset?.id === b.id ? (
                   <span className="row" style={{ gap: 8, justifyContent: "flex-end" }}>
@@ -115,7 +122,7 @@ export function Benutzer() {
               </td>
             </tr>
           ))}
-          {liste.length === 0 && <tr><td colSpan={4} style={{ color: "var(--muted)" }}>Noch keine Benutzer.</td></tr>}
+          {liste.length === 0 && <tr><td colSpan={5} style={{ color: "var(--muted)" }}>Noch keine Benutzer.</td></tr>}
         </tbody>
       </table>
       <p style={{ color: "var(--muted)", fontSize: 13, marginTop: 12 }}>
