@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { api, getToken, setToken, type Kassenprofil, type Session } from "./api";
-import { Tutorial, tutorialKey } from "./components/Tutorial";
 import { Login } from "./pages/Login";
 import { Verkauf } from "./pages/Verkauf";
 import { Belege } from "./pages/Belege";
@@ -15,7 +14,7 @@ import { Druckwarteschlange } from "./pages/Druckwarteschlange";
 import { Diagnose } from "./pages/Diagnose";
 import { Auswertung } from "./pages/Auswertung";
 
-export type Tab = "verkauf" | "belege" | "drucke" | "auswertung" | "abschluss" | "artikel" | "kategorien" | "pfand" | "zahlarten" | "veranstaltungen" | "benutzer" | "service";
+type Tab = "verkauf" | "belege" | "drucke" | "auswertung" | "abschluss" | "artikel" | "kategorien" | "pfand" | "zahlarten" | "veranstaltungen" | "benutzer" | "service";
 const PROFIL_TABS: Tab[] = ["verkauf", "belege", "auswertung", "abschluss", "artikel", "kategorien", "pfand", "zahlarten"];
 
 const TAB_TITEL: Record<Tab, string> = {
@@ -39,7 +38,6 @@ export function App() {
   const [druckOffen, setDruckOffen] = useState(0);
   const [theme, setTheme] = useState<string>(() => localStorage.getItem("vk_theme") || "indigo");
   const [headerHidden, setHeaderHidden] = useState<boolean>(() => localStorage.getItem("vk_header_hidden") === "1");
-  const [tutorialOpen, setTutorialOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -61,12 +59,6 @@ export function App() {
   }
   useEffect(() => {
     if (session) ladeProfile().catch(() => { /* ignoriert */ });
-  }, [session]);
-  useEffect(() => {
-    if (!session) return;
-    if (localStorage.getItem(tutorialKey(session.benutzer_id)) !== "1") {
-      setTutorialOpen(true);
-    }
   }, [session]);
 
   useEffect(() => {
@@ -113,15 +105,10 @@ export function App() {
   const zeigeProfilwahl = PROFIL_TABS.includes(tab) && profile.length > 1;
 
   const tabBtn = (id: Tab, label: string, badge?: number) => (
-    <button className={`tab ${tab === id ? "active" : ""}`} onClick={() => setTab(id)} data-tour={`tab-${id}`}>
+    <button className={`tab ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>
       {label}{badge != null && badge > 0 && <span className="tab-badge">{badge}</span>}
     </button>
   );
-
-  function tutorialSchliessen(gesehen: boolean) {
-    if (gesehen) localStorage.setItem(tutorialKey(session!.benutzer_id), "1");
-    setTutorialOpen(false);
-  }
 
   return (
     <div className={`app ${headerHidden ? "header-collapsed" : ""}`}>
@@ -133,7 +120,7 @@ export function App() {
       >
         {headerHidden ? "⌄" : "⌃"}
       </button>
-      <header className="topbar" data-tour="kopfzeile">
+      <header className="topbar">
         <div className="topbar-inner">
           <div className="brand">
             <div className="brand-logo">VK</div>
@@ -145,13 +132,12 @@ export function App() {
           <div className="top-actions">
             {themeSwitch}
             <div className="user-chip"><b>{session.name}</b><span>{session.rolle}</span></div>
-            <button className="btn btn-sm tutorial-help" aria-label="Tutorial starten" title="Tutorial starten" onClick={() => setTutorialOpen(true)}>?</button>
             <button className="btn btn-sm" onClick={handleLogout}>Abmelden</button>
           </div>
         </div>
       </header>
 
-      <div className="tabbar" data-tour="reiterleiste">
+      <div className="tabbar">
         <nav className="tabs">
           {tabBtn("verkauf", "Verkauf")}
           {tabBtn("belege", "Belege")}
@@ -170,7 +156,7 @@ export function App() {
 
       <main className="inhalt">
         {zeigeProfilwahl && (
-          <div className="row" data-tour="profilwahl" style={{ gap: 10, alignItems: "center", margin: "0 0 18px", flexWrap: "wrap" }}>
+          <div className="row" style={{ gap: 10, alignItems: "center", margin: "0 0 18px", flexWrap: "wrap" }}>
             <span className="eyebrow">Aktives Kassenprofil</span>
             <select value={profilId ?? ""} onChange={(e) => setProfilId(Number(e.target.value))} style={{ maxWidth: 280 }}>
               {profile.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -197,7 +183,6 @@ export function App() {
         {tab === "benutzer" && canAdmin && <Benutzer />}
         {tab === "service" && canService && <Diagnose />}
       </main>
-      <Tutorial session={session} open={tutorialOpen} onClose={tutorialSchliessen} onTabChange={setTab} />
     </div>
   );
 }

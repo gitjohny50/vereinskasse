@@ -88,7 +88,7 @@ export function Druckwarteschlange({ canAdmin }: { canAdmin: boolean }) {
       )}
       {fehler && <p className="login-error" style={{ marginBottom: 12 }}>{fehler}</p>}
 
-      <table className="tabelle" data-tour="druckwarteschlange">
+      <table className="tabelle">
         <thead><tr><th>Auftrag</th><th>Status</th><th className="num">Versuche</th><th>Aktualisiert</th><th className="num">Aktionen</th></tr></thead>
         <tbody>
           {jobs.map((j) => {
