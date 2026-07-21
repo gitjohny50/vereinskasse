@@ -52,9 +52,9 @@ jobs:
           chmod +x osv-scanner
           ./osv-scanner -L ${{ runner.temp }}/backend.cdx.json
 
-  ####################
-  #  FRONTEND JOB    #
-  ####################
+  ###################
+  #   FRONTEND JOB    #
+  ###################
   frontend-ci:
     runs-on: ubuntu-latest
 
@@ -79,11 +79,11 @@ jobs:
           chmod +x osv-scanner
           ./osv-scanner -L ${{ runner.temp }}/frontend.cdx.json
 
-      # Danach ganz normal das Projekt aufsetzen und bauen
+      # Danach ganz normal das Projekt aufsetzen und bauen (Node 22 für jest-dom v7)
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20' 
+          node-version: '22' 
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -99,9 +99,9 @@ jobs:
       - name: Build project
         run: npm run build
 
-  ####################
-  #    SAST JOB      #
-  ####################
+  ###################
+  #     SAST JOB      #
+  ###################
   security-sast:
     name: CodeQL Security Scan
     runs-on: ubuntu-latest
