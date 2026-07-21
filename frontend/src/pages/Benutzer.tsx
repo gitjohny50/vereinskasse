@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { api, ApiError, type Benutzer as B, type Rolle } from "../api";
-import { tutorialKey } from "../components/Tutorial";
+import { tutorialKey } from "../components/TutorialData";
 
 export function Benutzer() {
   const [liste, setListe] = useState<B[]>([]);

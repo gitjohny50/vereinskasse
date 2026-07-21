@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, getToken, setToken, type Kassenprofil, type Session } from "./api";
-import { Tutorial, tutorialKey } from "./components/Tutorial";
+import { Tutorial } from "./components/Tutorial";
+import { tutorialKey } from "./components/TutorialData";
 import { Login } from "./pages/Login";
 import { Verkauf } from "./pages/Verkauf";
 import { Belege } from "./pages/Belege";
