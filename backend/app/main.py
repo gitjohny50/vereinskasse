@@ -27,6 +27,7 @@ from .routers import analytics, auth, catalog, diagnostics, health, profiles, re
 from .routers import print_queue as print_queue_router
 from . import print_queue
 from .seed import seed_all
+from .timeutils import local_tz, now_local
 
 
 def _worker_intervall() -> float:
@@ -87,12 +88,26 @@ def _local_ips() -> list[str]:
     return sorted(ips)
 
 
+def _internet_status() -> str:
+    for host, port in [("1.1.1.1", 53), ("8.8.8.8", 53)]:
+        try:
+            with socket.create_connection((host, port), timeout=1.5):
+                return "online"
+        except OSError:
+            continue
+    return "offline"
+
+
 def _startup_info() -> dict[str, str | list[str]]:
     host = os.environ.get("VK_HOST", "0.0.0.0")
     port = os.environ.get("VK_PORT", "8000")
     ips = _local_ips()
     urls = [f"http://{ip}:{port}" for ip in ips]
     hostname = socket.gethostname()
+    mdns_name = os.environ.get("VK_MDNS_NAME", hostname or "kasse").strip().removesuffix(".local")
+    mdns_url = f"http://{mdns_name}.local:{port}" if mdns_name else ""
+    if mdns_url:
+        urls.append(mdns_url)
     if hostname:
         urls.append(f"http://{hostname}.local:{port}")
     public_host = os.environ.get("VK_PUBLIC_HOST", "").strip()
@@ -114,10 +129,13 @@ def _startup_info() -> dict[str, str | list[str]]:
         drucker = cfg.get("drucker.transport", "mock")
 
     return {
-        "zeit": __import__("datetime").datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
+        "zeit": now_local().strftime("%d.%m.%Y %H:%M:%S"),
         "hostname": hostname or "-",
         "user": getpass.getuser(),
         "version": settings.app_version,
+        "internet": _internet_status(),
+        "mdns": mdns_url or "-",
+        "timezone": str(local_tz()),
         "profil": f"{profil_text}, {artikel_count} Artikel",
         "data_dir": str(settings.data_dir),
         "drucker": drucker,

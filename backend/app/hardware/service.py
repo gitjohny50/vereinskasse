@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import base64
 import binascii
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -23,7 +23,7 @@ from ..models import (
     Verkauf,
 )
 from ..money import format_cents
-from ..timeutils import to_local
+from ..timeutils import now_local, to_local
 from .escpos import EscposBuilder
 from .factory import DEFAULT_HW_SETTINGS, build_printer
 from .printer_base import PrinterStatus
@@ -75,7 +75,7 @@ def build_test_page(cfg: dict[str, str]) -> bytes:
     qr_url = cfg.get("diagnose.testseite.qr_url", "").strip()
     if qr_url:
         b.qr(qr_url, module_size=6)
-    b.feed(1).line("Zeit: " + datetime.now(timezone.utc).astimezone().strftime("%d.%m.%Y %H:%M:%S"))
+    b.feed(1).line("Zeit: " + now_local().strftime("%d.%m.%Y %H:%M:%S"))
     b.cut(mode=cfg.get("schnitt.modus", "partial"), feed_lines=int(cfg.get("schnitt.vorschub_zeilen", "3")))
     return b.build()
 
@@ -110,6 +110,8 @@ def build_startup_receipt(cfg: dict[str, str], info: dict[str, str | list[str]])
         ("Host:", "hostname"),
         ("User:", "user"),
         ("Version:", "version"),
+        ("Internet:", "internet"),
+        ("mDNS:", "mdns"),
         ("Profil:", "profil"),
         ("Daten:", "data_dir"),
         ("Drucker:", "drucker"),
