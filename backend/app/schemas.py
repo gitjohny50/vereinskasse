@@ -1,7 +1,7 @@
 """API-Schemata (Ein-/Ausgabe). Serverseitige Validierung, Lastenheft 28.1."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -45,6 +45,7 @@ class ClockStatusOut(BaseModel):
 
 
 class ClockSetIn(BaseModel):
+    datum: date
     stunde: int = Field(ge=0, le=23)
     minute: int = Field(ge=0, le=59)
 

@@ -216,6 +216,7 @@ export function App() {
 
 function ClockPrompt({ onClose, onOpenService }: { onClose: () => void; onOpenService: () => void }) {
   const [clock, setClock] = useState<ClockStatus | null>(null);
+  const [date, setDate] = useState("");
   const [hour, setHour] = useState("12");
   const [minute, setMinute] = useState("00");
   const [busy, setBusy] = useState(false);
@@ -223,6 +224,7 @@ function ClockPrompt({ onClose, onOpenService }: { onClose: () => void; onOpenSe
   useEffect(() => {
     api.clockStatus().then((c) => {
       setClock(c);
+      setDate(c.datum);
       const [hh, mm] = c.uhrzeit.split(":");
       setHour(hh ?? "12");
       setMinute(mm ?? "00");
@@ -230,9 +232,19 @@ function ClockPrompt({ onClose, onOpenService }: { onClose: () => void; onOpenSe
   }, []);
 
   async function speichern() {
+    const stunde = Number(hour);
+    const minuteWert = Number(minute);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      setClock((c) => c ? { ...c, detail: "Bitte ein gültiges Datum auswählen." } : c);
+      return;
+    }
+    if (!Number.isInteger(stunde) || stunde < 0 || stunde > 23 || !Number.isInteger(minuteWert) || minuteWert < 0 || minuteWert > 59) {
+      setClock((c) => c ? { ...c, detail: "Bitte Stunde 0-23 und Minute 0-59 eingeben." } : c);
+      return;
+    }
     setBusy(true);
     try {
-      const updated = await api.setClock(Number(hour), Number(minute));
+      const updated = await api.setClock(date, stunde, minuteWert);
       setClock(updated);
       if (!updated.detail.includes("konnte nicht")) onClose();
     } finally {
@@ -245,12 +257,15 @@ function ClockPrompt({ onClose, onOpenService }: { onClose: () => void; onOpenSe
       <div className="modal-card clock-login-modal">
         <div className="eyebrow">Systemzeit</div>
         <h2>Uhrzeit prüfen</h2>
-        <p>Wenn der Pi ohne Ethernet gestartet ist, stelle vor dem Verkauf kurz Stunde und Minute.</p>
+        <p>Wenn der Pi ohne Ethernet gestartet ist, stelle vor dem Verkauf kurz Datum und Uhrzeit.</p>
         <div className="clock-current">
           <span>Aktuell</span>
           <strong>{clock?.uhrzeit ?? "--:--"}</strong>
           <small>{clock ? `${clock.datum} · ${clock.zeitzone}` : "Wird geladen"}</small>
         </div>
+        <label className="clock-date-input">Datum
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </label>
         <div className="clock-inputs">
           <label>Stunde
             <input value={hour} onChange={(e) => setHour(e.target.value.replace(/\D/g, "").slice(0, 2))} inputMode="numeric" />

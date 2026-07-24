@@ -73,7 +73,16 @@ def uhr_status() -> ClockStatusOut:
 
 @router.post("/uhr", response_model=ClockStatusOut)
 def uhr_stellen(payload: ClockSetIn, benutzer: Benutzer = Depends(require_service)) -> ClockStatusOut:
-    ziel = now_local().replace(hour=payload.stunde, minute=payload.minute, second=0, microsecond=0)
+    aktuelle_zeit = now_local()
+    ziel = aktuelle_zeit.replace(
+        year=payload.datum.year,
+        month=payload.datum.month,
+        day=payload.datum.day,
+        hour=payload.stunde,
+        minute=payload.minute,
+        second=0,
+        microsecond=0,
+    )
     ziel_lokal = ziel.strftime("%Y-%m-%d %H:%M:%S")
     commands = [
         ["sudo", "-n", "/usr/bin/timedatectl", "set-ntp", "false"],
@@ -89,7 +98,7 @@ def uhr_stellen(payload: ClockSetIn, benutzer: Benutzer = Depends(require_servic
             if res.stderr.strip():
                 detail += f" · {res.stderr.strip()}"
             return _clock_status(detail)
-    return _clock_status(f"Uhr gestellt von {benutzer.name} auf {ziel.strftime('%H:%M')}.")
+    return _clock_status(f"Uhr gestellt von {benutzer.name} auf {ziel.strftime('%d.%m.%Y %H:%M')}.")
 
 
 @router.post("/drucker/testseite", response_model=ActionResult)

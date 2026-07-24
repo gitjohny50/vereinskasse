@@ -144,6 +144,7 @@ export function Diagnose() {
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoResult, setLogoResult] = useState<string>("Noch kein Logo geladen.");
   const [clock, setClock] = useState<ClockStatus | null>(null);
+  const [clockDate, setClockDate] = useState("");
   const [clockHour, setClockHour] = useState("12");
   const [clockMinute, setClockMinute] = useState("00");
   const [clockBusy, setClockBusy] = useState(false);
@@ -154,6 +155,7 @@ export function Diagnose() {
       setHealth(h);
       setPrinter(p);
       setClock(c);
+      setClockDate(c.datum);
       const [hh, mm] = c.uhrzeit.split(":");
       setClockHour(hh ?? "12");
       setClockMinute(mm ?? "00");
@@ -275,14 +277,19 @@ export function Diagnose() {
   async function uhrStellen() {
     const stunde = Number(clockHour);
     const minute = Number(clockMinute);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(clockDate)) {
+      setClock((c) => c ? { ...c, detail: "Bitte ein gültiges Datum auswählen." } : c);
+      return;
+    }
     if (!Number.isInteger(stunde) || stunde < 0 || stunde > 23 || !Number.isInteger(minute) || minute < 0 || minute > 59) {
       setClock((c) => c ? { ...c, detail: "Bitte Stunde 0-23 und Minute 0-59 eingeben." } : c);
       return;
     }
     setClockBusy(true);
     try {
-      const updated = await api.setClock(stunde, minute);
+      const updated = await api.setClock(clockDate, stunde, minute);
       setClock(updated);
+      setClockDate(updated.datum);
       const [hh, mm] = updated.uhrzeit.split(":");
       setClockHour(hh ?? String(stunde).padStart(2, "0"));
       setClockMinute(mm ?? String(minute).padStart(2, "0"));
@@ -310,8 +317,7 @@ export function Diagnose() {
           <div className="num">00 / UHRZEIT</div>
           <h2>Uhrzeit prüfen und stellen</h2>
           <p>
-            Wenn der Pi ohne Ethernet oder Internet startet, prüfe hier vor dem Verkauf die Uhrzeit.
-            Es reicht, Stunde und Minute zu setzen.
+            Wenn der Pi ohne Ethernet oder Internet startet, prüfe hier vor dem Verkauf Datum und Uhrzeit.
           </p>
         </div>
         <div className="clock-panel">
@@ -320,6 +326,9 @@ export function Diagnose() {
             <strong>{clock?.uhrzeit ?? "--:--"}</strong>
             <small>{clock ? `${clock.datum} · ${clock.zeitzone}` : "Uhrzeit wird geladen"}</small>
           </div>
+          <label className="clock-date-input">Datum
+            <input type="date" value={clockDate} onChange={(e) => setClockDate(e.target.value)} />
+          </label>
           <div className="clock-inputs">
             <label>Stunde
               <input value={clockHour} onChange={(e) => setClockHour(e.target.value.replace(/\D/g, "").slice(0, 2))} inputMode="numeric" />
