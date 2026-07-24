@@ -208,13 +208,25 @@ export function App() {
         <ClockPrompt
           onClose={() => setClockPromptOpen(false)}
           onOpenService={() => { setClockPromptOpen(false); setTab("service"); }}
+          onClockSet={async () => {
+            setClockPromptOpen(false);
+            await handleLogout();
+          }}
         />
       )}
     </div>
   );
 }
 
-function ClockPrompt({ onClose, onOpenService }: { onClose: () => void; onOpenService: () => void }) {
+function ClockPrompt({
+  onClose,
+  onOpenService,
+  onClockSet,
+}: {
+  onClose: () => void;
+  onOpenService: () => void;
+  onClockSet: () => Promise<void>;
+}) {
   const [clock, setClock] = useState<ClockStatus | null>(null);
   const [date, setDate] = useState("");
   const [hour, setHour] = useState("12");
@@ -246,7 +258,7 @@ function ClockPrompt({ onClose, onOpenService }: { onClose: () => void; onOpenSe
     try {
       const updated = await api.setClock(date, stunde, minuteWert);
       setClock(updated);
-      if (!updated.detail.includes("konnte nicht")) onClose();
+      if (!updated.detail.includes("konnte nicht")) await onClockSet();
     } finally {
       setBusy(false);
     }
@@ -255,31 +267,39 @@ function ClockPrompt({ onClose, onOpenService }: { onClose: () => void; onOpenSe
   return (
     <div className="modal-backdrop">
       <div className="modal-card clock-login-modal">
-        <div className="eyebrow">Systemzeit</div>
-        <h2>Uhrzeit prüfen</h2>
-        <p>Wenn der Pi ohne Ethernet gestartet ist, stelle vor dem Verkauf kurz Datum und Uhrzeit.</p>
+        <div className="clock-modal-head">
+          <div>
+            <div className="eyebrow">Systemzeit</div>
+            <h2>Datum und Uhrzeit prüfen</h2>
+          </div>
+          <button className="btn btn-sm" onClick={onClose}>Später</button>
+        </div>
+        <p>Wenn der Pi ohne Ethernet gestartet ist, stelle vor dem Verkauf Datum und Uhrzeit. Danach meldet die Kasse automatisch ab.</p>
         <div className="clock-current">
           <span>Aktuell</span>
           <strong>{clock?.uhrzeit ?? "--:--"}</strong>
           <small>{clock ? `${clock.datum} · ${clock.zeitzone}` : "Wird geladen"}</small>
         </div>
-        <label className="clock-date-input">Datum
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        </label>
-        <div className="clock-inputs">
-          <label>Stunde
-            <input value={hour} onChange={(e) => setHour(e.target.value.replace(/\D/g, "").slice(0, 2))} inputMode="numeric" />
+        <div className="clock-form-grid">
+          <label className="clock-date-input">Datum
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </label>
-          <span>:</span>
-          <label>Minute
-            <input value={minute} onChange={(e) => setMinute(e.target.value.replace(/\D/g, "").slice(0, 2))} inputMode="numeric" />
-          </label>
+          <div className="clock-inputs">
+            <label>Stunde
+              <input value={hour} onChange={(e) => setHour(e.target.value.replace(/\D/g, "").slice(0, 2))} inputMode="numeric" />
+            </label>
+            <span>:</span>
+            <label>Minute
+              <input value={minute} onChange={(e) => setMinute(e.target.value.replace(/\D/g, "").slice(0, 2))} inputMode="numeric" />
+            </label>
+          </div>
         </div>
         {clock?.detail && <div className={`result ${clock.detail.includes("konnte nicht") ? "err" : "ok"}`}>{clock.detail}</div>}
-        <div className="row" style={{ justifyContent: "flex-end", marginTop: 16 }}>
-          <button className="btn" onClick={onClose}>Später</button>
+        <div className="clock-modal-actions">
           <button className="btn" onClick={onOpenService}>Service öffnen</button>
-          <button className="btn btn-primary" disabled={busy} onClick={speichern}>{busy ? "Setze…" : "Uhr setzen"}</button>
+          <button className="btn btn-primary" disabled={busy} onClick={speichern}>
+            {busy ? "Setze…" : "Speichern & neu anmelden"}
+          </button>
         </div>
       </div>
     </div>
