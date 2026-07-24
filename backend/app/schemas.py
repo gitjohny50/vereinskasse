@@ -35,6 +35,20 @@ class DrawerOpenIn(BaseModel):
     grund: str = Field(default="manueller Test", max_length=255)
 
 
+class ClockStatusOut(BaseModel):
+    lokal: str
+    datum: str
+    uhrzeit: str
+    zeitzone: str
+    ntp_aktiv: bool | None = None
+    detail: str = ""
+
+
+class ClockSetIn(BaseModel):
+    stunde: int = Field(ge=0, le=23)
+    minute: int = Field(ge=0, le=59)
+
+
 class SettingOut(BaseModel):
     schluessel: str
     wert: str

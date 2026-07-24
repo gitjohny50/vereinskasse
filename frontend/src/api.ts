@@ -62,6 +62,7 @@ async function download(path: string, fallbackName: string): Promise<void> {
 export interface Health { status: string; version: string; db_integrity: string; }
 export interface PrinterStatus { reachable: boolean; known: boolean; paper_ok: boolean | null; cover_closed: boolean | null; detail: string; }
 export interface ActionResult { ok: boolean; detail: string; auftrag_id: number | null; drucker: string | null; }
+export interface ClockStatus { lokal: string; datum: string; uhrzeit: string; zeitzone: string; ntp_aktiv: boolean | null; detail: string; }
 export interface UsbGeraet { vendor_id: string; product_id: string; hersteller: string; produkt: string; beschreibung: string; }
 export interface UsbListe { pyusb_installiert: boolean; geraete: UsbGeraet[]; hinweis: string; }
 export interface Setting { schluessel: string; wert: string; beschreibung: string; }
@@ -166,6 +167,8 @@ export const api = {
   health: () => req<Health>("/health"),
   printerStatus: () => req<PrinterStatus>("/diagnose/drucker/status"),
   usbGeraete: () => req<UsbListe>("/diagnose/drucker/usb-geraete"),
+  clockStatus: () => req<ClockStatus>("/diagnose/uhr"),
+  setClock: (stunde: number, minute: number) => req<ClockStatus>("/diagnose/uhr", { method: "POST", body: j({ stunde, minute }) }),
   testPage: () => req<ActionResult>("/diagnose/drucker/testseite", { method: "POST" }),
   cutTest: (anzahl: number) => req<ActionResult>("/diagnose/drucker/schnitt-test", { method: "POST", body: j({ anzahl }) }),
   openDrawer: (grund: string) => req<ActionResult>("/diagnose/schublade/oeffnen", { method: "POST", body: j({ grund }) }),

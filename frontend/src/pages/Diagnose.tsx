@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type ActionResult, type BonLogoInfo, type Health, type PrinterStatus, type Setting, type UsbGeraet, type UsbListe } from "../api";
+import { api, type ActionResult, type BonLogoInfo, type ClockStatus, type Health, type PrinterStatus, type Setting, type UsbGeraet, type UsbListe } from "../api";
 
 type DotKind = "ok" | "warn" | "danger" | "unknown";
 
@@ -143,12 +143,20 @@ export function Diagnose() {
   const [logo, setLogo] = useState<BonLogoInfo | null>(null);
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoResult, setLogoResult] = useState<string>("Noch kein Logo geladen.");
+  const [clock, setClock] = useState<ClockStatus | null>(null);
+  const [clockHour, setClockHour] = useState("12");
+  const [clockMinute, setClockMinute] = useState("00");
+  const [clockBusy, setClockBusy] = useState(false);
 
   async function refreshStatus() {
     try {
-      const [h, p] = await Promise.all([api.health(), api.printerStatus()]);
+      const [h, p, c] = await Promise.all([api.health(), api.printerStatus(), api.clockStatus()]);
       setHealth(h);
       setPrinter(p);
+      setClock(c);
+      const [hh, mm] = c.uhrzeit.split(":");
+      setClockHour(hh ?? "12");
+      setClockMinute(mm ?? "00");
     } catch {
       setPrinter(null);
     }
@@ -264,6 +272,26 @@ export function Diagnose() {
       setLogoBusy(false);
     }
   }
+  async function uhrStellen() {
+    const stunde = Number(clockHour);
+    const minute = Number(clockMinute);
+    if (!Number.isInteger(stunde) || stunde < 0 || stunde > 23 || !Number.isInteger(minute) || minute < 0 || minute > 59) {
+      setClock((c) => c ? { ...c, detail: "Bitte Stunde 0-23 und Minute 0-59 eingeben." } : c);
+      return;
+    }
+    setClockBusy(true);
+    try {
+      const updated = await api.setClock(stunde, minute);
+      setClock(updated);
+      const [hh, mm] = updated.uhrzeit.split(":");
+      setClockHour(hh ?? String(stunde).padStart(2, "0"));
+      setClockMinute(mm ?? String(minute).padStart(2, "0"));
+    } catch (e) {
+      setClock((c) => c ? { ...c, detail: e instanceof Error ? e.message : "Uhr konnte nicht gesetzt werden." } : c);
+    } finally {
+      setClockBusy(false);
+    }
+  }
 
   const transport = settings.find((s) => s.schluessel === "drucker.transport")?.wert ?? "mock";
   const orderedSettings = SETTING_ORDER
@@ -277,6 +305,36 @@ export function Diagnose() {
 
   return (
     <>
+      <section className="card service-clock-card">
+        <div>
+          <div className="num">00 / UHRZEIT</div>
+          <h2>Uhrzeit prüfen und stellen</h2>
+          <p>
+            Wenn der Pi ohne Ethernet oder Internet startet, prüfe hier vor dem Verkauf die Uhrzeit.
+            Es reicht, Stunde und Minute zu setzen.
+          </p>
+        </div>
+        <div className="clock-panel">
+          <div className="clock-current">
+            <span>Aktuell</span>
+            <strong>{clock?.uhrzeit ?? "--:--"}</strong>
+            <small>{clock ? `${clock.datum} · ${clock.zeitzone}` : "Uhrzeit wird geladen"}</small>
+          </div>
+          <div className="clock-inputs">
+            <label>Stunde
+              <input value={clockHour} onChange={(e) => setClockHour(e.target.value.replace(/\D/g, "").slice(0, 2))} inputMode="numeric" />
+            </label>
+            <span>:</span>
+            <label>Minute
+              <input value={clockMinute} onChange={(e) => setClockMinute(e.target.value.replace(/\D/g, "").slice(0, 2))} inputMode="numeric" />
+            </label>
+          </div>
+          <button className="btn btn-primary" disabled={clockBusy} onClick={uhrStellen}>
+            {clockBusy ? "Setze…" : "Uhrzeit setzen"}
+          </button>
+        </div>
+        {clock?.detail && <div className={`result ${clock.detail.includes("konnte nicht") ? "err" : "ok"}`}>{clock.detail}</div>}
+      </section>
 
       <div className="statusbar">
         <Pill kind={printerKind} label={printerLabel} detail={printer?.detail} />

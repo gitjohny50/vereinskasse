@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, getToken, setToken, type Kassenprofil, type Session } from "./api";
+import { api, getToken, setToken, type ClockStatus, type Kassenprofil, type Session } from "./api";
 import { Tutorial } from "./components/Tutorial";
 import { tutorialKey } from "./components/TutorialData";
 import { Login } from "./pages/Login";
@@ -41,6 +41,7 @@ export function App() {
   const [theme, setTheme] = useState<string>(() => localStorage.getItem("vk_theme") || "indigo");
   const [headerHidden, setHeaderHidden] = useState<boolean>(() => localStorage.getItem("vk_header_hidden") === "1");
   const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [clockPromptOpen, setClockPromptOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -68,6 +69,10 @@ export function App() {
     if (localStorage.getItem(tutorialKey(session.benutzer_id)) !== "1") {
       setTutorialOpen(true);
     }
+  }, [session]);
+  useEffect(() => {
+    if (!session || session.stufe < 30) return;
+    setClockPromptOpen(true);
   }, [session]);
 
   useEffect(() => {
@@ -199,6 +204,69 @@ export function App() {
         {tab === "service" && canService && <Diagnose />}
       </main>
       <Tutorial session={session} open={tutorialOpen} onClose={tutorialSchliessen} onTabChange={setTab} />
+      {clockPromptOpen && (
+        <ClockPrompt
+          onClose={() => setClockPromptOpen(false)}
+          onOpenService={() => { setClockPromptOpen(false); setTab("service"); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ClockPrompt({ onClose, onOpenService }: { onClose: () => void; onOpenService: () => void }) {
+  const [clock, setClock] = useState<ClockStatus | null>(null);
+  const [hour, setHour] = useState("12");
+  const [minute, setMinute] = useState("00");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.clockStatus().then((c) => {
+      setClock(c);
+      const [hh, mm] = c.uhrzeit.split(":");
+      setHour(hh ?? "12");
+      setMinute(mm ?? "00");
+    }).catch(() => { /* Service-Rechte/Backend kurz nicht bereit */ });
+  }, []);
+
+  async function speichern() {
+    setBusy(true);
+    try {
+      const updated = await api.setClock(Number(hour), Number(minute));
+      setClock(updated);
+      if (!updated.detail.includes("konnte nicht")) onClose();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-card clock-login-modal">
+        <div className="eyebrow">Systemzeit</div>
+        <h2>Uhrzeit prüfen</h2>
+        <p>Wenn der Pi ohne Ethernet gestartet ist, stelle vor dem Verkauf kurz Stunde und Minute.</p>
+        <div className="clock-current">
+          <span>Aktuell</span>
+          <strong>{clock?.uhrzeit ?? "--:--"}</strong>
+          <small>{clock ? `${clock.datum} · ${clock.zeitzone}` : "Wird geladen"}</small>
+        </div>
+        <div className="clock-inputs">
+          <label>Stunde
+            <input value={hour} onChange={(e) => setHour(e.target.value.replace(/\D/g, "").slice(0, 2))} inputMode="numeric" />
+          </label>
+          <span>:</span>
+          <label>Minute
+            <input value={minute} onChange={(e) => setMinute(e.target.value.replace(/\D/g, "").slice(0, 2))} inputMode="numeric" />
+          </label>
+        </div>
+        {clock?.detail && <div className={`result ${clock.detail.includes("konnte nicht") ? "err" : "ok"}`}>{clock.detail}</div>}
+        <div className="row" style={{ justifyContent: "flex-end", marginTop: 16 }}>
+          <button className="btn" onClick={onClose}>Später</button>
+          <button className="btn" onClick={onOpenService}>Service öffnen</button>
+          <button className="btn btn-primary" disabled={busy} onClick={speichern}>{busy ? "Setze…" : "Uhr setzen"}</button>
+        </div>
+      </div>
     </div>
   );
 }
