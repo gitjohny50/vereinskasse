@@ -166,8 +166,9 @@ def finalisiere(
     # Druck (Bon + Tickets) und Schublade gemäß Zahlungsart. Ein Druckfehler
     # macht den bereits gebuchten Verkauf nicht rückgängig - er ist erfasst.
     try:
-        print_queue.druck_verkauf(session, verkauf.id, schublade=zm.schublade_oeffnen, sofort=False)
-    except Exception:  # pragma: no cover - Druck ist best effort
-        pass
+       print_queue.druck_verkauf(session, verkauf.id, schublade=zm.schublade_oeffnen, sofort=False)
+    except Exception as e:  # pragma: no cover
+        import logging
+        logging.warning(f"Sales print queue failed: {e}")
     session.refresh(verkauf)
     return verkauf
