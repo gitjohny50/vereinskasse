@@ -123,6 +123,7 @@ label input, label select, label textarea { font-weight: 500; color: var(--ink);
 .theme-dot.bernstein { background: #ea580c; }
 .theme-dot.on { border-color: var(--ink); }
 .tutorial-help { width: 38px; padding: 0; font-size: 18px; font-weight: 850; border-radius: 999px; }
+.reload-btn { white-space: nowrap; }
 
 /* Legacy-Kopf (falls noch referenziert) */
 .masthead { max-width: 1180px; margin: 0 auto; padding: 18px 20px; display: flex; align-items: center; justify-content: space-between; }
@@ -227,9 +228,9 @@ label input, label select, label textarea { font-weight: 500; color: var(--ink);
 .korb-liste::-webkit-scrollbar { display: none; }
 .korb-slider { position: absolute; top: 0; right: 2px; bottom: 0; width: 14px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); touch-action: none; cursor: pointer; }
 .korb-slider span { position: absolute; left: 2px; right: 2px; min-height: 26px; border-radius: 999px; background: var(--accent); box-shadow: 0 1px 3px rgba(15,23,42,.22); }
-.korb-zeile { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px; }
-.korb-name { font-weight: 600; font-size: 14.5px; }
-.korb-summe { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 66px; text-align: right; }
+.korb-zeile { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(72px, auto); align-items: center; gap: 10px; }
+.korb-name { min-width: 0; font-weight: 600; font-size: 14.5px; line-height: 1.18; overflow-wrap: anywhere; hyphens: auto; }
+.korb-summe { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 72px; text-align: right; white-space: nowrap; }
 .pos-checkout { position: sticky; bottom: 0; z-index: 2; flex: 0 0 auto; display: flex; flex-direction: column; gap: 9px; border-top: 1px solid var(--border); padding-top: 10px; padding-bottom: 8px; background: var(--surface); box-shadow: 0 -8px 16px rgba(15,23,42,.04); }
 .korb-summen { border-top: none; padding-top: 0; display: flex; flex-direction: column; gap: 3px; }
 .korb-gesamt { font-size: 18px; font-weight: 800; }
@@ -263,7 +264,7 @@ label input, label select, label textarea { font-weight: 500; color: var(--ink);
 .kassieren-btn span { font-size: 15px; font-weight: 700; opacity: .95; }
 .swipe-row { position: relative; overflow: hidden; border-radius: var(--radius-sm); background: var(--danger); }
 .swipe-remove { position: absolute; inset: 0 0 0 auto; width: 96px; display: grid; place-items: center; color: #fff; font-size: 12.5px; font-weight: 800; }
-.swipe-content { position: relative; z-index: 1; background: var(--surface); border-radius: var(--radius-sm); padding: 2px 0; touch-action: pan-y; transition: transform .16s ease; will-change: transform; }
+.swipe-content { position: relative; z-index: 1; min-width: 0; background: var(--surface); border-radius: var(--radius-sm); padding: 6px 0; touch-action: pan-y; transition: transform .16s ease; will-change: transform; }
 .swipe-content:active { transition: none; }
 
 .verkauf-ok { background: var(--accent-weich); border: 1px solid var(--accent); border-radius: var(--radius-sm); padding: 14px; display: flex; flex-direction: column; gap: 8px; }
