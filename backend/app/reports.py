@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
@@ -18,6 +19,8 @@ from sqlalchemy.orm import Session
 from . import models
 from . import print_queue
 from .timeutils import to_local
+
+log = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
@@ -138,8 +141,8 @@ def erstelle_z(session: Session, kassenprofil_id: int, benutzer: models.Benutzer
     # Druck über die Warteschlange (best effort - der Abschluss ist gespeichert).
     try:
         druck_bericht(session, abschluss.id)
-    except Exception:  # pragma: no cover
-        pass
+    except Exception as exc:  # pragma: no cover
+        log.warning("Report printing failed: %s", exc)
     session.refresh(abschluss)
     return abschluss
 
