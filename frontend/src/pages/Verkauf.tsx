@@ -475,10 +475,6 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
               <div className="checkout-step cash-step" data-tour="verkauf-bar">
                 <div className="cash-step-title">
                   <h2>Barzahlung</h2>
-                  <div className={nochOffen > 0 ? "cash-status warn" : "cash-status ok"}>
-                    <span>{nochOffen > 0 ? "Noch offen" : "Rückgeld"}</span>
-                    <strong>{formatCents(nochOffen > 0 ? nochOffen : rueckgeldAnzeige)}</strong>
-                  </div>
                 </div>
 
                 <div className="cash-flow">

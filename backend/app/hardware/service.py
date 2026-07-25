@@ -321,6 +321,18 @@ def _ticket_name(bezeichnung: str) -> str:
     return bezeichnung
 
 
+def _ticket_titel_zeilen(bezeichnung: str, width: int) -> list[str]:
+    """Artikelticket-Titel passend fuer doppelte ESC/POS-Zeichenbreite umbrechen."""
+    titel_width = max(10, (width // 2) - 1)
+    text = " ".join(bezeichnung.split())
+    return textwrap.wrap(
+        text,
+        width=titel_width,
+        break_long_words=True,
+        break_on_hyphens=False,
+    ) or [""]
+
+
 def _ticket_liste(positionen: list[dict]) -> list[dict]:
     """Erzeugt aus den Positionen die einzelnen Artikeltickets (Lastenheft 14.3):
     pro_stueck -> ein Ticket je Stück, pro_position -> ein Ticket je Position,
@@ -377,7 +389,9 @@ def _ticket_block(
 
     b.align("center")
     b.bold(False).size(1, 1).line(verein)
-    b.bold(True).size(2, 2).line(bezeichnung)
+    b.bold(True).size(2, 2)
+    for titelzeile in _ticket_titel_zeilen(bezeichnung, int(cfg.get("bon.breite_zeichen", "42"))):
+        b.line(titelzeile)
     b.bold(False).size(1, 1).feed(1)
     detail = " ".join(details).strip()
     b.line(f"{detail}  -{belegnummer}-" if detail else f"-{belegnummer}-")
