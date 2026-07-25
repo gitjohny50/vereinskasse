@@ -90,6 +90,8 @@ Aufruf ggf. bestätigt bzw. manuell vertraut werden.
 ```bash
 sudo cp /opt/vereinskasse/deploy/vereinskasse-backend.service /etc/systemd/system/
 sudo cp /opt/vereinskasse/deploy/vereinskasse-kiosk.service /etc/systemd/system/
+sudo cp /opt/vereinskasse/deploy/vereinskasse-time.sudoers /etc/sudoers.d/vereinskasse-time
+sudo chmod 0440 /etc/sudoers.d/vereinskasse-time
 sudo chmod +x /opt/vereinskasse/deploy/kiosk-start.sh
 sudo systemctl daemon-reload
 sudo systemctl enable --now vereinskasse-backend.service

@@ -1,7 +1,7 @@
 """API-Schemata (Ein-/Ausgabe). Serverseitige Validierung, Lastenheft 28.1."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -33,6 +33,21 @@ class CutTestIn(BaseModel):
 
 class DrawerOpenIn(BaseModel):
     grund: str = Field(default="manueller Test", max_length=255)
+
+
+class ClockStatusOut(BaseModel):
+    lokal: str
+    datum: str
+    uhrzeit: str
+    zeitzone: str
+    ntp_aktiv: bool | None = None
+    detail: str = ""
+
+
+class ClockSetIn(BaseModel):
+    datum: date
+    stunde: int = Field(ge=0, le=23)
+    minute: int = Field(ge=0, le=59)
 
 
 class SettingOut(BaseModel):
