@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import {
   api, ApiError, euroToCents, formatCents,
   type Artikel, type Berechnung, type Kassenprofil, type Kategorie, type Pfandart,
@@ -88,6 +88,34 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
     return Array.from(new Set([gesamt, gerundet, ...basis].filter((v): v is number => typeof v === "number" && v > 0))).sort((a, b) => a - b);
   }, [gesamt]);
 
+  const berechnungLaden = useCallback(async (): Promise<Berechnung | null> => {
+    if (!hatPositionen) return null;
+    if (berechnungAktuell) return berech;
+    if (berechnungPromise.current?.key === berechnungKey) return berechnungPromise.current.promise;
+
+    const seq = ++berechnungSeq.current;
+    setBerechnungBusy(true);
+    setBerechnungFehler(null);
+    const promise = api.berechnung(berechnungPayload).then((b) => {
+      if (seq === berechnungSeq.current) {
+        berechnungKeyRef.current = berechnungKey;
+        setBerech(b);
+      }
+      return b;
+    }).catch((e) => {
+      const meldung = e instanceof ApiError ? e.message : "Berechnung fehlgeschlagen.";
+      if (seq === berechnungSeq.current) {
+        setBerechnungFehler(meldung);
+      }
+      return null;
+    }).finally(() => {
+      if (seq === berechnungSeq.current) setBerechnungBusy(false);
+      if (berechnungPromise.current?.key === berechnungKey) berechnungPromise.current = null;
+    });
+    berechnungPromise.current = { key: berechnungKey, promise };
+    return promise;
+  }, [berech, berechnungAktuell, berechnungKey, berechnungPayload, hatPositionen]);
+
   useEffect(() => {
     if (!hatPositionen) {
       berechnungSeq.current += 1;
@@ -99,7 +127,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
       return;
     }
     void berechnungLaden();
-  }, [berechnungKey, hatPositionen]);
+  }, [berechnungKey, berechnungLaden, hatPositionen]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(updateKorbScroll);
@@ -127,33 +155,6 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
   function checkoutSchliessen() {
     setCheckoutOpen(false);
     setFehler(null);
-  }
-  async function berechnungLaden(): Promise<Berechnung | null> {
-    if (!hatPositionen) return null;
-    if (berechnungAktuell) return berech;
-    if (berechnungPromise.current?.key === berechnungKey) return berechnungPromise.current.promise;
-
-    const seq = ++berechnungSeq.current;
-    setBerechnungBusy(true);
-    setBerechnungFehler(null);
-    const promise = api.berechnung(berechnungPayload).then((b) => {
-      if (seq === berechnungSeq.current) {
-        berechnungKeyRef.current = berechnungKey;
-        setBerech(b);
-      }
-      return b;
-    }).catch((e) => {
-      const meldung = e instanceof ApiError ? e.message : "Berechnung fehlgeschlagen.";
-      if (seq === berechnungSeq.current) {
-        setBerechnungFehler(meldung);
-      }
-      return null;
-    }).finally(() => {
-      if (seq === berechnungSeq.current) setBerechnungBusy(false);
-      if (berechnungPromise.current?.key === berechnungKey) berechnungPromise.current = null;
-    });
-    berechnungPromise.current = { key: berechnungKey, promise };
-    return promise;
   }
   async function checkoutStarten() {
     if (!hatPositionen) return;
