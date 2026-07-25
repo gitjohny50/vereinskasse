@@ -10,7 +10,7 @@ Parsing von Eingaben:    Decimal (nur an der Systemgrenze, nie für Rechnungen)
 """
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 Cents = int
 
