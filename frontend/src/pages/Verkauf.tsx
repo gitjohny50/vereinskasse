@@ -79,16 +79,19 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
   const berechnungAktuell = berech !== null && berechnungKeyRef.current === berechnungKey;
   const gesamt = berech?.gesamt_cent ?? 0;
   const gegebenCent = euroToCents(gegeben);
-  const rueckgeld = zahlart?.rueckgeld_berechnen && gegebenCent !== null && gegebenCent >= gesamt ? gegebenCent - gesamt : null;
-  const rueckgeldStueckelung = useMemo(() => berechneStueckelung(rueckgeld ?? 0), [rueckgeld]);
   const kannKassieren = !busy && hatPositionen;
   const sichtbarerBerechnungFehler = berechnungFehler && !berechnungBusy && !berechnungAktuell ? berechnungFehler : null;
   const offenePositionen = artikelItems.reduce((sum, i) => sum + i.menge, 0) + pfandItems.reduce((sum, i) => sum + i.menge, 0);
   const cashPresets = useMemo(() => {
     const basis = [500, 1000, 2000, 5000];
-    const gerundet = [500, 1000, 2000, 5000].find((v) => v >= gesamt);
-    return Array.from(new Set([gesamt, gerundet, ...basis].filter((v): v is number => typeof v === "number" && v > 0))).sort((a, b) => a - b);
+    const naechsterSchein = [500, 1000, 2000, 5000, 10000].find((v) => v >= gesamt);
+    const naechsterZehner = Math.ceil(gesamt / 1000) * 1000;
+    return Array.from(new Set([gesamt, naechsterZehner, naechsterSchein, ...basis].filter((v): v is number => typeof v === "number" && v >= gesamt && v > 0))).sort((a, b) => a - b);
   }, [gesamt]);
+  const gegebenAnzeige = gegebenCent === null ? gesamt : gegebenCent;
+  const rueckgeldAnzeige = zahlart?.rueckgeld_berechnen && gegebenAnzeige >= gesamt ? gegebenAnzeige - gesamt : 0;
+  const rueckgeldAnzeigeStueckelung = useMemo(() => berechneStueckelung(rueckgeldAnzeige), [rueckgeldAnzeige]);
+  const nochOffen = gegebenCent !== null && gegebenCent < gesamt ? gesamt - gegebenCent : 0;
 
   const berechnungLaden = useCallback(async (): Promise<Berechnung | null> => {
     if (!hatPositionen) return null;
@@ -469,33 +472,54 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
             )}
 
             {checkoutStep === "bar" && (
-              <div className="checkout-step center-step" data-tour="verkauf-bar">
-                <h2>Wie viel Bargeld wurde gegeben?</h2>
-                <div className="cash-total-display">
-                  <span>Zu zahlen</span><strong>{formatCents(gesamt)}</strong>
-                  <span>Gegeben</span><strong>{gegebenCent == null ? "–" : formatCents(gegebenCent)}</strong>
+              <div className="checkout-step cash-step" data-tour="verkauf-bar">
+                <div className="cash-step-title">
+                  <h2>Barzahlung</h2>
+                  <div className={nochOffen > 0 ? "cash-status warn" : "cash-status ok"}>
+                    <span>{nochOffen > 0 ? "Noch offen" : "Rückgeld"}</span>
+                    <strong>{formatCents(nochOffen > 0 ? nochOffen : rueckgeldAnzeige)}</strong>
+                  </div>
                 </div>
-                <div className="cash-presets modal-cash">
-                  <button type="button" className="chip chip-strong" onClick={() => setBargeld(gesamt)}>Passend</button>
-                  {cashPresets.map((c) => (
-                    <button type="button" key={c} className="chip" onClick={() => setBargeld(c)}>{formatCents(c)}</button>
-                  ))}
-                </div>
-                <div className="cash-adjust modal-cash-adjust">
-                  {[100, 200, 500, 1000].map((c) => (
-                    <button type="button" key={c} className="chip" onClick={() => addBargeld(c)}>+{formatCents(c)}</button>
-                  ))}
-                  <button type="button" className="chip" onClick={() => setGegeben("")}>C</button>
-                </div>
-                <label className="cash-manual">Manuell eingeben (€)
-                  <input value={gegeben} onChange={(e) => setGegeben(e.target.value)} inputMode="decimal" placeholder="z. B. 20,00" />
-                </label>
-                {rueckgeld !== null && (
-                  <div className="rueckgeld-panel">
-                    <div className="rueckgeld rueckgeld-modal">Rückgeld: <strong>{formatCents(rueckgeld)}</strong></div>
-                    {rueckgeld > 0 ? (
+
+                <div className="cash-flow">
+                  <section className="cash-entry-panel">
+                    <div className="cash-total-display">
+                      <span>Zu zahlen</span><strong>{formatCents(gesamt)}</strong>
+                      <span>Gegeben</span><strong>{formatCents(gegebenAnzeige)}</strong>
+                    </div>
+
+                    <div className="cash-section-label">Schnellwahl</div>
+                    <div className="cash-presets modal-cash">
+                      <button type="button" className="cash-choice exact" onClick={() => setBargeld(gesamt)}>
+                        <span>Passend</span>
+                        <strong>{formatCents(gesamt)}</strong>
+                      </button>
+                      {cashPresets.filter((c) => c !== gesamt).map((c) => (
+                        <button type="button" key={c} className="cash-choice" onClick={() => setBargeld(c)}>{formatCents(c)}</button>
+                      ))}
+                    </div>
+
+                    <div className="cash-section-label">Aufschlag</div>
+                    <div className="cash-adjust modal-cash-adjust">
+                      {[100, 200, 500, 1000].map((c) => (
+                        <button type="button" key={c} className="chip" onClick={() => addBargeld(c)}>+{formatCents(c)}</button>
+                      ))}
+                      <button type="button" className="chip" onClick={() => setGegeben("")}>C</button>
+                    </div>
+
+                    <label className="cash-manual">Manuell eingeben (€)
+                      <input value={gegeben} onChange={(e) => setGegeben(e.target.value)} inputMode="decimal" placeholder="z. B. 30,00" />
+                    </label>
+                  </section>
+
+                  <section className="cash-change-panel">
+                    <span>{nochOffen > 0 ? "Noch offen" : "Rückgeld"}</span>
+                    <strong>{formatCents(nochOffen > 0 ? nochOffen : rueckgeldAnzeige)}</strong>
+                    {nochOffen > 0 ? (
+                      <div className="cash-change-note">Gegebener Betrag ist zu gering.</div>
+                    ) : rueckgeldAnzeige > 0 ? (
                       <div className="stueckelung-grid" aria-label="Empfohlene Rückgeld-Stückelung">
-                        {rueckgeldStueckelung.map((s) => (
+                        {rueckgeldAnzeigeStueckelung.map((s) => (
                           <div key={s.wert} className={s.wert >= 500 ? "stueckelung-chip schein" : "stueckelung-chip muenze"}>
                             <span>{s.anzahl}×</span>
                             <strong>{formatCents(s.wert)}</strong>
@@ -503,14 +527,13 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
                         ))}
                       </div>
                     ) : (
-                      <div className="stueckelung-passend">Passend gegeben, kein Rückgeld.</div>
+                      <div className="stueckelung-passend">Passend gegeben.</div>
                     )}
-                  </div>
-                )}
-                {gegebenCent === null && <p className="cash-hint">Ohne Eingabe wird passend kassiert.</p>}
+                  </section>
+                </div>
                 {fehler && <p className="login-error">{fehler}</p>}
                 {!fehler && sichtbarerBerechnungFehler && <p className="login-error">{sichtbarerBerechnungFehler}</p>}
-                <div className="checkout-footer-actions">
+                <div className="checkout-footer-actions cash-footer-actions">
                   <button type="button" className="btn" disabled={busy} onClick={() => setCheckoutStep("zahlung")}>Zurück</button>
                   <button type="button" className="btn btn-primary kassieren-btn" disabled={busy || !kannKassieren} onClick={() => abschliessen()}>
                     {berechnungBusy ? "Berechne…" : "Kassieren"} <span>{formatCents(gesamt)}</span>

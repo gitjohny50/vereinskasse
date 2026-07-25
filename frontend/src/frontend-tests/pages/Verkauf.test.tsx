@@ -124,8 +124,8 @@ describe('Verkauf Component', () => {
     const gegebenInput = screen.getByLabelText(/Manuell eingeben/);
     await user.type(gegebenInput, '20,00');
 
-    const rueckgeldAnzeige = await screen.findByText('7,50 €');
-    expect(rueckgeldAnzeige).toBeInTheDocument();
+    const rueckgeldAnzeige = await screen.findAllByText('7,50 €');
+    expect(rueckgeldAnzeige[0]).toBeInTheDocument();
 
     const finalerKassierenButton = screen.getAllByRole('button', { name: /Kassieren 12,50\s€/ })[1];
     await user.click(finalerKassierenButton);
@@ -206,7 +206,7 @@ describe('Verkauf Component', () => {
     const weiterButton = screen.getByRole('button', { name: 'Weiter zur Zahlung' });
     await user.click(weiterButton);
 
-    const barModalTitle = await screen.findByText('Wie viel Bargeld wurde gegeben?');
+    const barModalTitle = await screen.findByText('Barzahlung');
     expect(barModalTitle).toBeInTheDocument();
   });
 
@@ -351,7 +351,7 @@ test('sollte die Bargeld-Schnellwahltasten korrekt anwenden', async () => {
     const gegebenInput = screen.getByLabelText(/Manuell eingeben/);
     expect(gegebenInput).toHaveValue('5,00');
 
-    const rueckgeldAnzeige = await screen.findByText('1,50 €');
-    expect(rueckgeldAnzeige).toBeInTheDocument();
+    const rueckgeldAnzeige = await screen.findAllByText('1,50 €');
+    expect(rueckgeldAnzeige[0]).toBeInTheDocument();
   });
 });
