@@ -96,9 +96,6 @@ describe('Verkauf Component', () => {
     const neinButton = screen.getByRole('button', { name: /Nein/ });
     await user.click(neinButton);
 
-    const barButton = screen.getByRole('button', { name: /Bar/ });
-    await user.click(barButton);
-
     const gegebenInput = screen.getByLabelText(/Manuell eingeben/);
     await user.type(gegebenInput, '20,00');
 
@@ -184,8 +181,8 @@ describe('Verkauf Component', () => {
     const weiterButton = screen.getByRole('button', { name: 'Weiter zur Zahlung' });
     await user.click(weiterButton);
 
-    const zahlungModalTitle = await screen.findByText('Zahlungsart wählen');
-    expect(zahlungModalTitle).toBeInTheDocument();
+    const barModalTitle = await screen.findByText('Wie viel Bargeld wurde gegeben?');
+    expect(barModalTitle).toBeInTheDocument();
   });
 
   test('sollte eine Fehlermeldung anzeigen, wenn der API-Abschluss fehlschlägt', async () => {
@@ -205,8 +202,6 @@ describe('Verkauf Component', () => {
     
     const neinButton = await screen.findByRole('button', { name: /Nein/ });
     await user.click(neinButton);
-    const barButton = await screen.findByRole('button', { name: /Bar/ });
-    await user.click(barButton);
     
     const finalerKassierenButton = screen.getAllByRole('button', { name: /Kassieren 12,50\s€/ })[1];
     await user.click(finalerKassierenButton);
@@ -263,8 +258,6 @@ describe('Verkauf Component', () => {
     await user.click(startCheckout);
     const neinButton = await screen.findByRole('button', { name: /Nein/ });
     await user.click(neinButton);
-    const barButton = await screen.findByRole('button', { name: /Bar/ });
-    await user.click(barButton);
 
     const gegebenInput = screen.getByLabelText(/Manuell eingeben/);
     await user.type(gegebenInput, '10,00');
@@ -295,9 +288,6 @@ describe('Verkauf Component', () => {
     const neinButton = await screen.findByRole('button', { name: /Nein/ });
     await user.click(neinButton);
 
-    const karteButton = await screen.findByRole('button', { name: /EC-Karte/ });
-    await user.click(karteButton);
-
     const erfolgsMeldung = await screen.findByText(/Beleg B-2024-1/);
     expect(erfolgsMeldung).toBeInTheDocument();
     
@@ -326,8 +316,6 @@ test('sollte die Bargeld-Schnellwahltasten korrekt anwenden', async () => {
     await user.click(startCheckout);
     const neinButton = await screen.findByRole('button', { name: /Nein/ });
     await user.click(neinButton);
-    const barButton = await screen.findByRole('button', { name: /Bar/ });
-    await user.click(barButton);
 
     // Finde den Chip für 5,00 €, der KEIN Plus-Zeichen enthält
     const presetFuenfButton = await screen.findByRole('button', { 
