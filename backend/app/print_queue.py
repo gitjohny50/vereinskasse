@@ -63,9 +63,11 @@ def _versuch(session: Session, auftrag: models.Druckauftrag, printer: PrinterAda
     try:
         result = printer.send(payload)
         ok, detail = result.ok, result.detail
-    except Exception as exc:  # Adapter, der nicht sauber abfängt
-        ok, detail = False, f"Ausnahme: {exc}"
-
+    except Exception as exc:  # pragma: no cover
+    import logging
+    logging.warning(f"Print adapter error: {exc}")
+    ok, detail = False, f"Ausnahme: {exc}"
+  
     auftrag.versuche += 1
     auftrag.drucker = printer.name
     auftrag.aktualisiert_am = _now()
