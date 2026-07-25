@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import {
   api, ApiError, euroToCents, formatCents,
   type Artikel, type Berechnung, type Kassenprofil, type Kategorie, type Pfandart,
@@ -19,10 +19,13 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
   const [warenkorb, setWarenkorb] = useState<Record<number, number>>({});
   const [pfandRueck, setPfandRueck] = useState<Record<number, number>>({});
   const [berech, setBerech] = useState<Berechnung | null>(null);
+  const [berechnungBusy, setBerechnungBusy] = useState(false);
+  const [berechnungFehler, setBerechnungFehler] = useState<string | null>(null);
 
   const [zahlId, setZahlId] = useState<number | null>(null);
   const [gegeben, setGegeben] = useState("");
   const [busy, setBusy] = useState(false);
+  const [belegDruckBusy, setBelegDruckBusy] = useState(false);
   const [fehler, setFehler] = useState<string | null>(null);
   const [erfolg, setErfolg] = useState<V | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -30,12 +33,16 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
   const [korbScroll, setKorbScroll] = useState({ show: false, top: 0, height: 100 });
   const korbListeRef = useRef<HTMLDivElement | null>(null);
   const sliderDrag = useRef(false);
+  const abschlussLaeuft = useRef(false);
+  const berechnungSeq = useRef(0);
+  const berechnungKeyRef = useRef<string | null>(null);
+  const berechnungPromise = useRef<{ key: string; promise: Promise<Berechnung | null> } | null>(null);
 
   const artById = useMemo(() => new Map(artikel.map((a) => [a.id, a])), [artikel]);
   const katById = useMemo(() => new Map(kategorien.map((k) => [k.id, k])), [kategorien]);
 
   useEffect(() => {
-    setFehler(null); setWarenkorb({}); setPfandRueck({}); setBerech(null); setErfolg(null);
+    setFehler(null); setWarenkorb({}); setPfandRueck({}); setBerech(null); setBerechnungFehler(null); setErfolg(null);
     Promise.all([
       api.kategorien(profil.id), api.artikel(profil.id), api.pfandarten(profil.id),
       api.zahlungsmethoden(profil.id),
@@ -60,30 +67,69 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
     [pfandRueck, profil.pfand_aktiv],
   );
 
-  useEffect(() => {
-    if (artikelItems.length === 0 && pfandItems.length === 0) { setBerech(null); return; }
-    let aktiv = true;
-    api.berechnung({
-      kassenprofil_id: profil.id, veranstaltung_id: null,
-      artikel: artikelItems, pfand_rueckgaben: pfandItems,
-    }).then((b) => { if (aktiv) setBerech(b); }).catch(() => { /* Anzeige bleibt */ });
-    return () => { aktiv = false; };
-  }, [artikelItems, pfandItems, profil.id]);
-
   const sichtbar = katFilter === "alle" ? artikel : artikel.filter((a) => a.kategorie_id === katFilter);
   const zahlart = zahlarten.find((z) => z.id === zahlId) ?? null;
   const pfandAktiv = profil.pfand_aktiv !== false;
+  const hatPositionen = artikelItems.length > 0 || pfandItems.length > 0;
+  const berechnungPayload = useMemo(() => ({
+    kassenprofil_id: profil.id, veranstaltung_id: null,
+    artikel: artikelItems, pfand_rueckgaben: pfandItems,
+  }), [artikelItems, pfandItems, profil.id]);
+  const berechnungKey = useMemo(() => JSON.stringify(berechnungPayload), [berechnungPayload]);
+  const berechnungAktuell = berech !== null && berechnungKeyRef.current === berechnungKey;
   const gesamt = berech?.gesamt_cent ?? 0;
   const gegebenCent = euroToCents(gegeben);
   const rueckgeld = zahlart?.rueckgeld_berechnen && gegebenCent !== null && gegebenCent >= gesamt ? gegebenCent - gesamt : null;
   const rueckgeldStueckelung = useMemo(() => berechneStueckelung(rueckgeld ?? 0), [rueckgeld]);
-  const kannKassieren = !busy && (gesamt !== 0 || pfandItems.length > 0);
+  const kannKassieren = !busy && hatPositionen;
+  const sichtbarerBerechnungFehler = berechnungFehler && !berechnungBusy && !berechnungAktuell ? berechnungFehler : null;
   const offenePositionen = artikelItems.reduce((sum, i) => sum + i.menge, 0) + pfandItems.reduce((sum, i) => sum + i.menge, 0);
   const cashPresets = useMemo(() => {
     const basis = [500, 1000, 2000, 5000];
     const gerundet = [500, 1000, 2000, 5000].find((v) => v >= gesamt);
     return Array.from(new Set([gesamt, gerundet, ...basis].filter((v): v is number => typeof v === "number" && v > 0))).sort((a, b) => a - b);
   }, [gesamt]);
+
+  const berechnungLaden = useCallback(async (): Promise<Berechnung | null> => {
+    if (!hatPositionen) return null;
+    if (berechnungAktuell) return berech;
+    if (berechnungPromise.current?.key === berechnungKey) return berechnungPromise.current.promise;
+
+    const seq = ++berechnungSeq.current;
+    setBerechnungBusy(true);
+    setBerechnungFehler(null);
+    const promise = api.berechnung(berechnungPayload).then((b) => {
+      if (seq === berechnungSeq.current) {
+        berechnungKeyRef.current = berechnungKey;
+        setBerech(b);
+      }
+      return b;
+    }).catch((e) => {
+      const meldung = e instanceof ApiError ? e.message : "Berechnung fehlgeschlagen.";
+      if (seq === berechnungSeq.current) {
+        setBerechnungFehler(meldung);
+      }
+      return null;
+    }).finally(() => {
+      if (seq === berechnungSeq.current) setBerechnungBusy(false);
+      if (berechnungPromise.current?.key === berechnungKey) berechnungPromise.current = null;
+    });
+    berechnungPromise.current = { key: berechnungKey, promise };
+    return promise;
+  }, [berech, berechnungAktuell, berechnungKey, berechnungPayload, hatPositionen]);
+
+  useEffect(() => {
+    if (!hatPositionen) {
+      berechnungSeq.current += 1;
+      berechnungKeyRef.current = null;
+      berechnungPromise.current = null;
+      setBerech(null);
+      setBerechnungBusy(false);
+      setBerechnungFehler(null);
+      return;
+    }
+    void berechnungLaden();
+  }, [berechnungKey, berechnungLaden, hatPositionen]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(updateKorbScroll);
@@ -94,22 +140,51 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
     };
   }, [warenkorb, pfandRueck, berech]);
 
-  function plus(id: number) { setWarenkorb((w) => ({ ...w, [id]: (w[id] ?? 0) + 1 })); }
+  function warenkorbGeaendert() {
+    setFehler(null);
+    setBerechnungFehler(null);
+    setGegeben("");
+  }
+  function plus(id: number) {
+    warenkorbGeaendert();
+    setWarenkorb((w) => ({ ...w, [id]: (w[id] ?? 0) + 1 }));
+  }
   function setMenge(id: number, n: number) {
+    warenkorbGeaendert();
     setWarenkorb((w) => { const c = { ...w }; if (n <= 0) delete c[id]; else c[id] = n; return c; });
   }
   function setRueck(id: number, n: number) {
+    warenkorbGeaendert();
     setPfandRueck((p) => { const c = { ...p }; if (n <= 0) delete c[id]; else c[id] = n; return c; });
   }
-  function leeren() { setWarenkorb({}); setPfandRueck({}); setGegeben(""); setFehler(null); }
+  function leeren() {
+    setWarenkorb({});
+    setPfandRueck({});
+    setGegeben("");
+    setFehler(null);
+    setBerechnungFehler(null);
+  }
   function checkoutSchliessen() {
     setCheckoutOpen(false);
     setFehler(null);
   }
-  function checkoutStarten() {
+  async function checkoutStarten() {
+    if (!hatPositionen) return;
+    const aktuelleBerechnung = await berechnungLaden();
+    if (!aktuelleBerechnung) { setFehler("Summe konnte nicht berechnet werden."); return; }
+    if (aktuelleBerechnung.gesamt_cent === 0 && pfandItems.length === 0) { setFehler("Summe ist 0,00 €."); return; }
     setFehler(null);
-    setCheckoutStep(pfandAktiv && pfandarten.length > 0 ? "pfand-frage" : "zahlung");
     setCheckoutOpen(true);
+    if (pfandAktiv && pfandarten.length > 0) setCheckoutStep("pfand-frage");
+    else weiterZurZahlung();
+  }
+  function weiterZurZahlung() {
+    setFehler(null);
+    if (zahlarten.length === 1) {
+      zahlungWaehlen(zahlarten[0]);
+      return;
+    }
+    setCheckoutStep("zahlung");
   }
   function setBargeld(cents: number) { setGegeben((cents / 100).toFixed(2).replace(".", ",")); }
   function addBargeld(cents: number) {
@@ -152,10 +227,15 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
   }
 
   async function abschliessen(methode: Zahlungsmethode | null = zahlart) {
+    if (abschlussLaeuft.current) return;
     if (!methode) { setFehler("Zahlungsart wählen."); return; }
-    if (methode.rueckgeld_berechnen && gegebenCent !== null && gegebenCent < gesamt) { setFehler("Gegebener Betrag ist zu gering."); return; }
+    abschlussLaeuft.current = true;
     setBusy(true); setFehler(null);
     try {
+      const aktuelleBerechnung = await berechnungLaden();
+      if (!aktuelleBerechnung) { setFehler("Summe konnte nicht berechnet werden."); return; }
+      if (aktuelleBerechnung.gesamt_cent === 0 && pfandItems.length === 0) { setFehler("Summe ist 0,00 €."); return; }
+      if (methode.rueckgeld_berechnen && gegebenCent !== null && gegebenCent < aktuelleBerechnung.gesamt_cent) { setFehler("Gegebener Betrag ist zu gering."); return; }
       const v = await api.verkaufAbschluss({
         kassenprofil_id: profil.id, veranstaltung_id: null,
         artikel: artikelItems, pfand_rueckgaben: pfandItems,
@@ -164,14 +244,29 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
       });
       setErfolg(v); setCheckoutOpen(false); setBerech(null); leeren();
     } catch (e) { setFehler(e instanceof ApiError ? e.message : "Abschluss fehlgeschlagen."); }
-    finally { setBusy(false); }
+    finally {
+      abschlussLaeuft.current = false;
+      setBusy(false);
+    }
   }
 
   function zahlungWaehlen(z: Zahlungsmethode) {
     setZahlId(z.id);
     setFehler(null);
     if (z.rueckgeld_berechnen) setCheckoutStep("bar");
-    else abschliessen(z);
+    else void abschliessen(z);
+  }
+  async function belegDrucken() {
+    if (!erfolg || belegDruckBusy) return;
+    setBelegDruckBusy(true);
+    setFehler(null);
+    try {
+      await api.belegDrucken(erfolg.id);
+    } catch (e) {
+      setFehler(e instanceof ApiError ? e.message : "Belegdruck fehlgeschlagen.");
+    } finally {
+      setBelegDruckBusy(false);
+    }
   }
 
   if (fehler && artikel.length === 0) return <p className="login-error">{fehler}</p>;
@@ -270,11 +365,12 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
           </div>
 
           {fehler && <p className="login-error">{fehler}</p>}
+          {!fehler && sichtbarerBerechnungFehler && <p className="login-error">{sichtbarerBerechnungFehler}</p>}
 
           <div className="checkout-actions">
             <button className="btn" data-tour="verkauf-leeren" onClick={leeren} disabled={busy}>Leeren</button>
             <button className="btn btn-primary kassieren-btn" data-tour="verkauf-kassieren" disabled={!kannKassieren} onClick={checkoutStarten}>
-              Kassieren <span>{formatCents(gesamt)}</span>
+              {berechnungBusy ? "Berechne…" : "Kassieren"} <span>{formatCents(gesamt)}</span>
             </button>
           </div>
         </div>
@@ -285,7 +381,9 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
             {erfolg.zahlung && erfolg.zahlung.rueckgeld_cent > 0 && (
               <div className="rueckgeld-gross">Rückgeld {formatCents(erfolg.zahlung.rueckgeld_cent)}</div>
             )}
-            <button className="btn btn-sm" onClick={() => api.belegDrucken(erfolg.id)}>Beleg drucken</button>
+            <button className="btn btn-sm" disabled={belegDruckBusy} onClick={belegDrucken}>
+              {belegDruckBusy ? "Drucke…" : "Beleg drucken"}
+            </button>
           </div>
         )}
       </aside>
@@ -296,7 +394,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
             <div className="checkout-modal-head">
               <div>
                 <div className="eyebrow">Kassieren</div>
-                <strong>{formatCents(gesamt)}</strong>
+                <strong>{berechnungBusy ? "…" : formatCents(gesamt)}</strong>
               </div>
               <button type="button" className="btn btn-sm" onClick={checkoutSchliessen}>Schließen</button>
             </div>
@@ -309,7 +407,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
                   <button type="button" className="checkout-choice" onClick={() => setCheckoutStep("pfand-auswahl")}>
                     <span>Ja</span><small>Pfand auswählen</small>
                   </button>
-                  <button type="button" className="checkout-choice primary-choice" onClick={() => { setPfandRueck({}); setCheckoutStep("zahlung"); }}>
+                  <button type="button" className="checkout-choice primary-choice" onClick={() => { setPfandRueck({}); weiterZurZahlung(); }}>
                     <span>Nein</span><small>Weiter zur Zahlung</small>
                   </button>
                 </div>
@@ -348,7 +446,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
                 )}
                 <div className="checkout-footer-actions">
                   <button type="button" className="btn" onClick={() => setCheckoutStep("pfand-frage")}>Zurück</button>
-                  <button type="button" className="btn btn-primary" onClick={() => setCheckoutStep("zahlung")}>Weiter zur Zahlung</button>
+                  <button type="button" className="btn btn-primary" onClick={weiterZurZahlung}>Weiter zur Zahlung</button>
                 </div>
               </div>
             )}
@@ -358,7 +456,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
                 <h2>Zahlungsart wählen</h2>
                 <div className="payment-big-grid">
                   {zahlarten.map((z) => (
-                    <button type="button" key={z.id} className="payment-big" disabled={busy} onClick={() => zahlungWaehlen(z)}>
+                    <button type="button" key={z.id} className="payment-big" disabled={busy || !kannKassieren} onClick={() => zahlungWaehlen(z)}>
                       <span>{z.name}</span>
                       <small>{z.rueckgeld_berechnen ? "Bargeld mit Rückgeld" : "Direkt kassieren"}</small>
                     </button>
@@ -411,10 +509,11 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
                 )}
                 {gegebenCent === null && <p className="cash-hint">Ohne Eingabe wird passend kassiert.</p>}
                 {fehler && <p className="login-error">{fehler}</p>}
+                {!fehler && sichtbarerBerechnungFehler && <p className="login-error">{sichtbarerBerechnungFehler}</p>}
                 <div className="checkout-footer-actions">
                   <button type="button" className="btn" disabled={busy} onClick={() => setCheckoutStep("zahlung")}>Zurück</button>
-                  <button type="button" className="btn btn-primary kassieren-btn" disabled={busy} onClick={() => abschliessen()}>
-                    Kassieren <span>{formatCents(gesamt)}</span>
+                  <button type="button" className="btn btn-primary kassieren-btn" disabled={busy || !kannKassieren} onClick={() => abschliessen()}>
+                    {berechnungBusy ? "Berechne…" : "Kassieren"} <span>{formatCents(gesamt)}</span>
                   </button>
                 </div>
               </div>

@@ -224,16 +224,33 @@ def druck_verkauf(session: Session, verkauf_id: int, schublade: bool, printer: P
 
 
 def druck_beleg(session: Session, verkauf_id: int, benutzer: str, printer: PrinterAdapter | None = None) -> dict:
-    """Beleg (Original-Bon) auf Anforderung drucken - ohne Schublade, ohne
-    Tickets, ohne KOPIE-Kennzeichnung."""
+    """Beleg auf Anforderung zweifach drucken: Kunde + Vereinskasse."""
     cfg = hw.load_hw_settings(session)
     verkauf = session.get(models.Verkauf, verkauf_id)
     bon_bytes = _verkauf_bon_bytes(session, cfg, verkauf, schublade=False, kopie=False)
+    profil = session.get(models.Kassenprofil, verkauf.kassenprofil_id)
+    benutzer_row = session.get(models.Benutzer, verkauf.benutzer_id)
+    zahlung = verkauf.zahlungen[0] if verkauf.zahlungen else None
+    kassen_bytes = hw.build_receipt_bytes(
+        cfg, bonkopf=profil.bonkopf if profil else "", bonfuss=profil.bonfuss if profil else "",
+        belegnummer=verkauf.belegnummer, zeitpunkt=verkauf.zeitpunkt,
+        bediener=benutzer_row.name if benutzer_row else "?", positionen=hw._pos_dicts(verkauf),
+        waren_cent=verkauf.waren_cent, pfand_cent=verkauf.pfand_cent, gesamt_cent=verkauf.gesamt_cent,
+        zahlung_name=zahlung.bezeichnung if zahlung else "-",
+        gegeben_cent=zahlung.gegeben_cent if zahlung else verkauf.gesamt_cent,
+        rueckgeld_cent=zahlung.rueckgeld_cent if zahlung else 0,
+        schublade=False, kopie=False, zusatz="*** VEREINSKASSE ***",
+    )
     job = enqueue(session, dokumenttyp="Beleg", payload=bon_bytes, verkauf_id=verkauf.id, bezeichnung=f"Beleg {verkauf.belegnummer}")
+    kassen_job = enqueue(session, dokumenttyp="Beleg", payload=kassen_bytes, verkauf_id=verkauf.id,
+                         bezeichnung=f"Beleg {verkauf.belegnummer} Vereinskasse")
     session.add(models.AuditLog(benutzer=benutzer, aktion="verkauf.beleg", datensatz=verkauf.belegnummer))
     session.commit()
-    ok = _versuch(session, job, _printer(session, printer))
-    return {"ok": ok, "detail": job.letzte_fehlermeldung, "auftrag_id": job.id, "drucker": job.drucker}
+    p = _printer(session, printer)
+    ok = _versuch(session, job, p)
+    ok_kasse = _versuch(session, kassen_job, p)
+    details = "; ".join([d for d in [job.letzte_fehlermeldung, kassen_job.letzte_fehlermeldung] if d])
+    return {"ok": ok and ok_kasse, "detail": details, "auftrag_id": job.id, "drucker": p.name}
 
 
 def druck_nachdruck(session: Session, verkauf_id: int, benutzer: str, printer: PrinterAdapter | None = None) -> dict:

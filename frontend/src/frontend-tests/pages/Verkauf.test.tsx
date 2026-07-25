@@ -75,6 +75,31 @@ describe('Verkauf Component', () => {
     });
   });
 
+  test('sollte nach fehlgeschlagener Live-Berechnung beim Kassieren erneut berechnen', async () => {
+    const user = userEvent.setup();
+    (api.artikel as Mock).mockResolvedValue([
+      { id: 101, name: 'Test-Cola', preis_cent: 1250, aktiv: true, archiviert: false },
+    ]);
+    (api.berechnung as Mock)
+      .mockRejectedValueOnce(new ApiError(500, 'Berechnung fehlgeschlagen.'))
+      .mockResolvedValueOnce({ gesamt_cent: 1250, waren_cent: 1250, pfand_cent: 0 });
+
+    render(<Verkauf profil={mockProfil} />);
+
+    const artikelButton = await screen.findByText('Test-Cola');
+    await user.click(artikelButton);
+
+    const fehler = await screen.findByText('Berechnung fehlgeschlagen.');
+    expect(fehler).toBeInTheDocument();
+
+    const kassierenButton = screen.getByRole('button', { name: /Kassieren/i });
+    await user.click(kassierenButton);
+
+    const pfandModalTitle = await screen.findByText('Pfand zurück?');
+    expect(pfandModalTitle).toBeInTheDocument();
+    expect((api.berechnung as Mock).mock.calls.length).toBeGreaterThan(1);
+  });
+
   test('sollte den kompletten Bezahlvorgang mit Barzahlung simulieren', async () => {
     const user = userEvent.setup();
     (api.artikel as Mock).mockResolvedValue([
@@ -95,9 +120,6 @@ describe('Verkauf Component', () => {
     expect(pfandModalTitle).toBeInTheDocument();
     const neinButton = screen.getByRole('button', { name: /Nein/ });
     await user.click(neinButton);
-
-    const barButton = screen.getByRole('button', { name: /Bar/ });
-    await user.click(barButton);
 
     const gegebenInput = screen.getByLabelText(/Manuell eingeben/);
     await user.type(gegebenInput, '20,00');
@@ -184,8 +206,8 @@ describe('Verkauf Component', () => {
     const weiterButton = screen.getByRole('button', { name: 'Weiter zur Zahlung' });
     await user.click(weiterButton);
 
-    const zahlungModalTitle = await screen.findByText('Zahlungsart wählen');
-    expect(zahlungModalTitle).toBeInTheDocument();
+    const barModalTitle = await screen.findByText('Wie viel Bargeld wurde gegeben?');
+    expect(barModalTitle).toBeInTheDocument();
   });
 
   test('sollte eine Fehlermeldung anzeigen, wenn der API-Abschluss fehlschlägt', async () => {
@@ -205,8 +227,6 @@ describe('Verkauf Component', () => {
     
     const neinButton = await screen.findByRole('button', { name: /Nein/ });
     await user.click(neinButton);
-    const barButton = await screen.findByRole('button', { name: /Bar/ });
-    await user.click(barButton);
     
     const finalerKassierenButton = screen.getAllByRole('button', { name: /Kassieren 12,50\s€/ })[1];
     await user.click(finalerKassierenButton);
@@ -263,8 +283,6 @@ describe('Verkauf Component', () => {
     await user.click(startCheckout);
     const neinButton = await screen.findByRole('button', { name: /Nein/ });
     await user.click(neinButton);
-    const barButton = await screen.findByRole('button', { name: /Bar/ });
-    await user.click(barButton);
 
     const gegebenInput = screen.getByLabelText(/Manuell eingeben/);
     await user.type(gegebenInput, '10,00');
@@ -295,9 +313,6 @@ describe('Verkauf Component', () => {
     const neinButton = await screen.findByRole('button', { name: /Nein/ });
     await user.click(neinButton);
 
-    const karteButton = await screen.findByRole('button', { name: /EC-Karte/ });
-    await user.click(karteButton);
-
     const erfolgsMeldung = await screen.findByText(/Beleg B-2024-1/);
     expect(erfolgsMeldung).toBeInTheDocument();
     
@@ -326,8 +341,6 @@ test('sollte die Bargeld-Schnellwahltasten korrekt anwenden', async () => {
     await user.click(startCheckout);
     const neinButton = await screen.findByRole('button', { name: /Nein/ });
     await user.click(neinButton);
-    const barButton = await screen.findByRole('button', { name: /Bar/ });
-    await user.click(barButton);
 
     // Finde den Chip für 5,00 €, der KEIN Plus-Zeichen enthält
     const presetFuenfButton = await screen.findByRole('button', { 

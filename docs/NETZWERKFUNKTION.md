@@ -9,7 +9,9 @@ nur ein Zusatz, wenn per Ethernet eine Verbindung vorhanden ist.
 ## Zielverhalten
 
 - Standardmäßig ist kein eigenes WLAN sichtbar.
-- Die Kasse ist lokal per mDNS/Bonjour erreichbar, z. B. `http://kasse.local:8000`.
+- Die Kasse ist lokal per mDNS/Bonjour erreichbar, z. B. `https://kasse.local`.
+- Nginx ist der öffentliche Einstiegspunkt; Uvicorn/FastAPI läuft nur intern
+  auf `127.0.0.1:8000`.
 - Ethernet wird automatisch per DHCP genutzt, wenn ein Kabel steckt.
 - Bei vorhandener Internetverbindung können externe Dienste genutzt werden.
 - Ohne Internet läuft die Kasse unverändert offline weiter.
@@ -34,7 +36,7 @@ kann ein lokaler Kassen-Hotspot gezielt aktiviert werden.
 
 Der Pi hängt per LAN-Kabel im vorhandenen Netzwerk.
 
-- iPad/Mac öffnet `http://kasse.local:8000`
+- iPad/Mac öffnet `https://kasse.local`
 - Internet wird automatisch erkannt
 - SumUp oder andere externe Dienste können bei Internet genutzt werden
 - Bei Internet-Ausfall arbeitet die Kasse offline weiter
@@ -54,7 +56,7 @@ Hotspot starten.
 
 - SSID z. B. `Vereinskasse-kasse`
 - iPad verbindet sich mit diesem Netz
-- Kasse ist dann über `http://kasse.local:8000` erreichbar
+- Kasse ist dann über `https://kasse.local` erreichbar
 - Internet ist in dieser Betriebsart normalerweise nicht vorhanden
 
 Dieser Hotspot ist nicht automatisch aktiv und wird nur bei Bedarf gestartet.
@@ -68,22 +70,29 @@ cd /home/admin/vereinskasse
 sudo ./deploy/network/setup-pi-network.sh kasse
 ```
 
+Danach den HTTPS-Proxy aktivieren:
+
+```bash
+sudo ./deploy/network/setup-nginx-proxy.sh kasse
+```
+
 Danach ist die Kasse erreichbar unter:
 
 ```text
-http://kasse.local:8000
+https://kasse.local
 ```
 
 Falls der Hostname anders sein soll:
 
 ```bash
 sudo ./deploy/network/setup-pi-network.sh kasse2
+sudo ./deploy/network/setup-nginx-proxy.sh kasse2
 ```
 
 Dann:
 
 ```text
-http://kasse2.local:8000
+https://kasse2.local
 ```
 
 ## Optionalen lokalen iPad-Hotspot aktivieren
@@ -137,14 +146,16 @@ curl -I --connect-timeout 3 https://github.com
 
 ## systemd-Konfiguration
 
-Für Zugriff aus dem LAN muss das Backend auf allen Interfaces lauschen:
+Für Zugriff aus dem LAN lauscht **Nginx** auf Port 80/443. Das Backend selbst
+lauscht nur lokal, damit Uvicorn nicht direkt im Netzwerk hängt:
 
 ```ini
-Environment=VK_HOST=0.0.0.0
+Environment=VK_HOST=127.0.0.1
 Environment=VK_PORT=8000
 Environment=VK_MDNS_NAME=kasse
+Environment=VK_PUBLIC_URL=https://kasse.local
 Environment=VK_TIMEZONE=Europe/Berlin
-ExecStart=/home/admin/vereinskasse/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+ExecStart=/home/admin/vereinskasse/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 Danach:
@@ -152,7 +163,13 @@ Danach:
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl restart vereinskasse-backend.service
+sudo systemctl reload nginx
 ```
+
+Die versionierte Nginx-Konfiguration liegt unter
+`deploy/nginx/vereinskasse.conf`. Sie liefert `frontend/dist` aus und leitet
+`/api/` an `http://127.0.0.1:8000` weiter. Das lokale Zertifikat wird durch
+`deploy/network/setup-nginx-proxy.sh` erzeugt.
 
 ## Uhrzeit: sinnvolle Quelle
 
@@ -190,5 +207,5 @@ Pi zusätzlich eine echte Internetverbindung hat.
 
 Ein Captive Portal wird bewusst nicht eingesetzt, weil es auf dem iPad
 zusätzliche Bildschirmfläche belegt und den Kassenstart unnötig kompliziert
-macht. Der Zugriff erfolgt direkt über `http://kasse.local:8000` oder über den
+macht. Der Zugriff erfolgt direkt über `https://kasse.local` oder über den
 QR-Code auf dem Startbeleg.

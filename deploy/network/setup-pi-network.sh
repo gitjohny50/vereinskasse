@@ -57,7 +57,14 @@ cat <<EOF
 Netzwerk-Basis ist eingerichtet.
 
 mDNS-Adresse:
-  http://${HOSTNAME}.local:8000
+  https://${HOSTNAME}.local
+
+Hinweis:
+  Fuer HTTPS und iPad/Mac-Zugriff Nginx aktivieren:
+  sudo ./deploy/network/setup-nginx-proxy.sh ${HOSTNAME}
+
+Internes Backend:
+  http://127.0.0.1:8000
 
 Internetstatus testen:
   curl -I --connect-timeout 3 https://github.com
