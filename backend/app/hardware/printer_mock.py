@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from .printer_base import PrinterAdapter, PrintResult, PrinterStatus
+from .printer_base import PrinterAdapter, PrinterStatus, PrintResult
 
 # Bekannte Steuerbefehle für eine lesbare Protokollierung.
 _MARKERS = {

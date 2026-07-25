@@ -29,10 +29,10 @@ from ..models import (
     Zahlungsmethode,
 )
 from ..schemas import (
-    ArtikelIn,
     ArtikelBulkActionOut,
     ArtikelCsvImportIn,
     ArtikelCsvImportOut,
+    ArtikelIn,
     ArtikelOut,
     ArtikelUpdateIn,
     BulkArtikelIn,

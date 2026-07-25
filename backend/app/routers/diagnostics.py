@@ -35,11 +35,11 @@ def _clock_status(detail: str = "") -> ClockStatusOut:
         )
         if res.returncode == 0:
             ntp_aktiv = res.stdout.strip().lower() == "yes"
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         ntp_aktiv = None
     return ClockStatusOut(
         lokal=jetzt.isoformat(),
-        datum=jetzt.strftime("%d.%m.%Y"),
+        datum=jetzt.strftime("%Y-%m-%d"),
         uhrzeit=jetzt.strftime("%H:%M"),
         zeitzone=str(local_tz()),
         ntp_aktiv=ntp_aktiv,

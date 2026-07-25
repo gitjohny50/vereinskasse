@@ -448,7 +448,7 @@ def list_usb_devices() -> dict:
     try:
         import usb.core
         import usb.util
-    except Exception:  # pyusb nicht installiert
+    except ImportError:  # pyusb nicht installiert
         return {"pyusb_installiert": False, "geraete": []}
 
     geraete: list[dict] = []
@@ -457,7 +457,7 @@ def list_usb_devices() -> dict:
             def _str(index: int) -> str:
                 try:
                     return usb.util.get_string(dev, index) or ""
-                except Exception:
+                except (OSError, UnicodeDecodeError, ValueError, usb.core.NoBackendError, usb.core.USBError):
                     return ""
             hersteller = _str(dev.iManufacturer) if dev.iManufacturer else ""
             produkt = _str(dev.iProduct) if dev.iProduct else ""
@@ -469,6 +469,6 @@ def list_usb_devices() -> dict:
                 "produkt": produkt,
                 "beschreibung": beschreibung,
             })
-    except Exception as exc:  # z. B. fehlende Berechtigungen
+    except (OSError, PermissionError, usb.core.NoBackendError, usb.core.USBError) as exc:  # z. B. fehlende Berechtigungen
         return {"pyusb_installiert": True, "geraete": [], "hinweis": f"USB-Suche fehlgeschlagen: {exc}"}
     return {"pyusb_installiert": True, "geraete": geraete}

@@ -1,0 +1,14 @@
+[tool.ruff]
+line-length = 180
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "F",
+  "I",
+  "BLE",
+  "LOG",
+  "RUF100",
+  "S110",
+]

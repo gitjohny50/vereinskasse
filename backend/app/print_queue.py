@@ -65,7 +65,7 @@ def _versuch(session: Session, auftrag: models.Druckauftrag, printer: PrinterAda
     try:
         result = printer.send(payload)
         ok, detail = result.ok, result.detail
-    except Exception as exc:  # Adapter, der nicht sauber abfängt
+    except Exception as exc:  # noqa: BLE001 - Adapter, der nicht sauber abfängt
         log.warning("Print adapter error: %s", exc)
         ok, detail = False, f"Ausnahme: {exc}"
 

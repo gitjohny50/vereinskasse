@@ -19,14 +19,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from . import print_queue
 from .config import settings
 from .database import SessionLocal, init_db
 from .hardware import service as hw_service
 from .hardware.service import ensure_defaults
 from .models import Artikel, Benutzer, Kassenprofil
-from .routers import analytics, auth, catalog, diagnostics, health, profiles, reports, sales, settings as settings_router, users
+from .routers import analytics, auth, catalog, diagnostics, health, profiles, reports, sales, users
 from .routers import print_queue as print_queue_router
-from . import print_queue
+from .routers import settings as settings_router
 from .seed import seed_all
 from .timeutils import local_tz, now_local
 
@@ -60,7 +61,7 @@ async def _druck_worker(stop: asyncio.Event) -> None:
                     print_queue.verarbeite_offene(session)
             await asyncio.to_thread(_lauf)
         except Exception:  # pragma: no cover - Worker darf nie sterben
-            pass
+            log.exception("Print worker failed.")
 
 
 def _startup_delay() -> float:
@@ -175,8 +176,8 @@ async def _startup_receipt_task(stop: asyncio.Event) -> None:
                 hw_service.run_startup_receipt(session, info)
 
         await asyncio.to_thread(_druck)
-    except Exception as exc:  # pragma: no cover - Startbeleg darf Backend nie verhindern
-        log.debug("Startup receipt failed: %s", exc)
+    except Exception:  # pragma: no cover - Startbeleg darf Backend nie verhindern
+        log.debug("Startup receipt failed.", exc_info=True)
 
 
 @asynccontextmanager
@@ -204,8 +205,8 @@ async def lifespan(_app: FastAPI):
                 await task
             except asyncio.CancelledError:
                 pass
-            except Exception as exc:  # pragma: no cover
-                log.debug("Task cleanup failed: %s", exc)
+            except Exception:  # pragma: no cover
+                log.debug("Task cleanup failed.", exc_info=True)
 
 
 app = FastAPI(title="Vereinskasse", version=settings.app_version, lifespan=lifespan)

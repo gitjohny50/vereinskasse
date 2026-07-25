@@ -9,12 +9,10 @@ from __future__ import annotations
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import sales
-from .. import print_queue
+from .. import print_queue, sales
 from ..auth import require_bediener
 from ..database import SessionLocal, get_session
 from ..models import Benutzer, Verkauf
-from ..timeutils import as_utc
 from ..schemas import (
     ActionResult,
     BerechnungIn,
@@ -24,6 +22,7 @@ from ..schemas import (
     VerkaufOut,
     ZahlungOut,
 )
+from ..timeutils import as_utc
 
 router = APIRouter(prefix="/api/verkauf", tags=["verkauf"], dependencies=[Depends(require_bediener)])
 

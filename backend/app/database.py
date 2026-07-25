@@ -63,8 +63,9 @@ def init_db() -> None:
     Spalten nach. So genügt nach einem Update ein Neustart - ohne separate
     Migrationsschritte.
     """
-    from . import models  # noqa: F401  (Import registriert die Modelle)
     from sqlalchemy import inspect
+
+    from . import models  # noqa: F401  (Import registriert die Modelle)
 
     Base.metadata.create_all(bind=engine)
     _ensure_columns(inspect(engine))
