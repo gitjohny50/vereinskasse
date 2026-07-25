@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import socket
 
-from .printer_base import PrinterAdapter, PrintResult, PrinterStatus
+from .printer_base import PrinterAdapter, PrinterStatus, PrintResult
 
 
 class NetworkPrinter(PrinterAdapter):

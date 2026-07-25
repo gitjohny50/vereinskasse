@@ -351,6 +351,23 @@ label input, label select, label textarea { font-weight: 500; color: var(--ink);
 .segmented button.on { background: var(--accent); color: var(--accent-kontrast); }
 
 /* ---------- Service / Diagnose ---------- */
+.service-clock-card { display: flex; flex-direction: column; gap: 14px; border-left: 4px solid var(--accent); }
+.clock-panel { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(150px, auto) auto auto; gap: 14px; align-items: end; }
+.clock-current { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.clock-current span { font-size: 12px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.clock-current strong { font-size: 34px; line-height: 1; font-weight: 850; font-variant-numeric: tabular-nums; color: var(--accent-stark); }
+.clock-current small { color: var(--muted); font-weight: 650; }
+.clock-inputs { display: grid; grid-template-columns: 96px auto 96px; gap: 8px; align-items: end; }
+.clock-inputs > span { padding-bottom: 9px; font-size: 26px; font-weight: 850; color: var(--muted); }
+.clock-inputs input { text-align: center; font-size: 24px; font-weight: 850; font-variant-numeric: tabular-nums; }
+.clock-date-input input { min-height: 52px; font-size: 18px; font-weight: 750; }
+.clock-login-modal { display: flex; flex-direction: column; gap: 14px; max-width: 620px; border-radius: var(--radius); }
+.clock-modal-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.clock-modal-head h2 { margin-bottom: 0; }
+.clock-login-modal p { margin: 0; color: var(--muted); }
+.clock-form-grid { display: grid; grid-template-columns: minmax(180px, 1fr) auto; gap: 14px; align-items: end; }
+.clock-modal-actions { display: grid; grid-template-columns: minmax(150px, .8fr) minmax(220px, 1.2fr); gap: 12px; margin-top: 4px; }
+.clock-modal-actions .btn { min-height: 54px; }
 .settings, .statusbar { display: flex; flex-direction: column; gap: 2px; }
 .setting { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--border); }
 .setting:last-child { border-bottom: none; }
@@ -417,6 +434,11 @@ label input, label select, label textarea { font-weight: 500; color: var(--ink);
   .brand-logo { width: 40px; height: 40px; }
   .setting { flex-direction: column; align-items: stretch; gap: 6px; }
   .setting select, .setting input { max-width: none; }
+  .clock-panel { grid-template-columns: 1fr; }
+  .clock-form-grid { grid-template-columns: 1fr; }
+  .clock-inputs { grid-template-columns: 1fr auto 1fr; }
+  .clock-modal-head { align-items: stretch; flex-direction: column; }
+  .clock-modal-actions { grid-template-columns: 1fr; }
 }
 @media (max-width: 480px) {
   .analytics-stats { grid-template-columns: 1fr; }

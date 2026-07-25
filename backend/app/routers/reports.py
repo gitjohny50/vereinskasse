@@ -14,9 +14,9 @@ from .. import reports
 from ..auth import require_admin
 from ..database import get_session
 from ..models import (
-    AuditLog,
     Artikel,
     ArtikelPfandZuordnung,
+    AuditLog,
     Belegkreis,
     Benutzer,
     Druckauftrag,
