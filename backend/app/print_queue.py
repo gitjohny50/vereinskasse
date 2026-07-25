@@ -223,7 +223,13 @@ def druck_verkauf(session: Session, verkauf_id: int, schublade: bool, printer: P
     return {"ok": ok, "auftraege": len(jobs), "tickets": len(tickets), "drucker": p.name}
 
 
-def druck_beleg(session: Session, verkauf_id: int, benutzer: str, printer: PrinterAdapter | None = None) -> dict:
+def druck_beleg(
+    session: Session,
+    verkauf_id: int,
+    benutzer: str,
+    printer: PrinterAdapter | None = None,
+    sofort: bool = True,
+) -> dict:
     """Beleg auf Anforderung einmal als Kundenbeleg drucken."""
     cfg = hw.load_hw_settings(session)
     verkauf = session.get(models.Verkauf, verkauf_id)
@@ -231,6 +237,8 @@ def druck_beleg(session: Session, verkauf_id: int, benutzer: str, printer: Print
     job = enqueue(session, dokumenttyp="Beleg", payload=bon_bytes, verkauf_id=verkauf.id, bezeichnung=f"Beleg {verkauf.belegnummer}")
     session.add(models.AuditLog(benutzer=benutzer, aktion="verkauf.beleg", datensatz=verkauf.belegnummer))
     session.commit()
+    if not sofort:
+        return {"ok": True, "detail": "Druckauftrag eingereiht.", "auftrag_id": job.id, "drucker": "warteschlange"}
     p = _printer(session, printer)
     ok = _versuch(session, job, p)
     return {"ok": ok, "detail": job.letzte_fehlermeldung, "auftrag_id": job.id, "drucker": p.name}

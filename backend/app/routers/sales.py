@@ -84,14 +84,16 @@ def detail(verkauf_id: int, session: Session = Depends(get_session)) -> VerkaufO
 
 
 @router.post("/{verkauf_id}/beleg", response_model=ActionResult)
-def beleg_drucken(verkauf_id: int, session: Session = Depends(get_session),
+def beleg_drucken(verkauf_id: int, background_tasks: BackgroundTasks, session: Session = Depends(get_session),
                   benutzer: Benutzer = Depends(require_bediener)) -> ActionResult:
     """Beleg (Original-Bon) auf Anforderung drucken - z. B. wenn der
     automatische Belegdruck ausgeschaltet ist."""
     v = session.get(Verkauf, verkauf_id)
     if v is None:
         raise HTTPException(status_code=404, detail="Beleg nicht gefunden.")
-    return ActionResult(**print_queue.druck_beleg(session, verkauf_id, benutzer=benutzer.name))
+    result = print_queue.druck_beleg(session, verkauf_id, benutzer=benutzer.name, sofort=False)
+    background_tasks.add_task(_druck_nach_verkauf)
+    return ActionResult(**result)
 
 
 @router.post("/{verkauf_id}/nachdruck", response_model=ActionResult)

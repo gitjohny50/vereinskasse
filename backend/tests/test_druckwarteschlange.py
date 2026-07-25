@@ -89,6 +89,27 @@ def test_beleg_auf_knopfdruck(client):
     assert belege[0]["bezeichnung"] == f"Beleg {v['belegnummer']}"
 
 
+def test_beleg_auf_knopfdruck_wartet_nicht_auf_synchronen_druck(client, monkeypatch):
+    def synchroner_druck_waere_falsch(*_args, **_kwargs):
+        raise AssertionError("Beleg-Endpunkt darf nicht synchron drucken")
+
+    monkeypatch.setattr("app.print_queue._versuch", synchroner_druck_waere_falsch)
+    monkeypatch.setattr("app.routers.sales._druck_nach_verkauf", lambda: None)
+    pid, arts, zm = _kasse(client)
+    v = client.post("/api/verkauf", json={
+        "kassenprofil_id": pid, "artikel": [{"artikel_id": arts["Pommes"]["id"], "menge": 1}],
+        "zahlungsmethode_id": zm["Bar"]["id"], "gegeben_cent": 500}).json()
+
+    r = client.post(f"/api/verkauf/{v['id']}/beleg")
+
+    assert r.status_code == 200
+    assert r.json()["detail"] == "Druckauftrag eingereiht."
+    with SessionLocal() as s:
+        for job in s.query(print_queue.models.Druckauftrag).filter_by(verkauf_id=v["id"]).all():
+            job.status = print_queue.ERFOLGREICH
+        s.commit()
+
+
 def test_wiederholung_bis_max_dann_fehlgeschlagen():
     with SessionLocal() as s:
         job = print_queue.enqueue(s, dokumenttyp="Bon", payload=b"\x1b@test", max_versuche=3)
