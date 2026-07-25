@@ -6,6 +6,8 @@ Nachdruck.
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -25,6 +27,7 @@ from ..schemas import (
 from ..timeutils import as_utc
 
 router = APIRouter(prefix="/api/verkauf", tags=["verkauf"], dependencies=[Depends(require_bediener)])
+log = logging.getLogger(__name__)
 
 
 @router.post("/berechnung", response_model=BerechnungOut)
@@ -40,8 +43,11 @@ def berechnung(payload: BerechnungIn, session: Session = Depends(get_session)) -
 
 
 def _druck_nach_verkauf() -> None:
-    with SessionLocal() as session:
-        print_queue.verarbeite_offene(session)
+    try:
+        with SessionLocal() as session:
+            print_queue.verarbeite_offene(session)
+    except Exception as exc:  # noqa: BLE001 - Druck darf den Verkauf nicht nachtraeglich kippen.
+        log.warning("Sales print processing failed after sale commit: %s", exc)
 
 
 @router.post("", response_model=VerkaufOut, status_code=201)
