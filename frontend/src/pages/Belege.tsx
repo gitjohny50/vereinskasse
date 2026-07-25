@@ -36,7 +36,7 @@ export function Belege({ profil }: { profil: Kassenprofil }) {
       </div>
       {hinweis && <p className="note" style={{ marginBottom: 12 }}>{hinweis}</p>}
 
-      <table className="tabelle">
+      <table className="tabelle" data-tour="belegliste">
         <thead><tr><th>Beleg</th><th>Zeitpunkt</th><th className="num">Gesamt</th><th>Zahlung</th><th className="num">Aktionen</th></tr></thead>
         <tbody>
           {liste.map((v) => (
