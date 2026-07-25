@@ -99,18 +99,24 @@ def _internet_status() -> str:
 
 
 def _startup_info() -> dict[str, str | list[str]]:
-    host = os.environ.get("VK_HOST", "0.0.0.0")
+    host = os.environ.get("VK_HOST", settings.host)
     port = os.environ.get("VK_PORT", "8000")
     ips = _local_ips()
     hostname = socket.gethostname()
     mdns_name = os.environ.get("VK_MDNS_NAME", hostname or "kasse").strip().removesuffix(".local")
-    mdns_url = f"http://{mdns_name}.local:{port}" if mdns_name else ""
-    urls = [mdns_url] if mdns_url else []
-    urls.extend(f"http://{ip}:{port}" for ip in ips)
-    if not mdns_url and hostname:
-        urls.append(f"http://{hostname}.local:{port}")
+    public_url = os.environ.get("VK_PUBLIC_URL", "").strip().rstrip("/")
+    if public_url:
+        mdns_url = public_url
+        urls = [public_url]
+        urls.extend(f"https://{ip}" for ip in ips)
+    else:
+        mdns_url = f"http://{mdns_name}.local:{port}" if mdns_name else ""
+        urls = [mdns_url] if mdns_url else []
+        urls.extend(f"http://{ip}:{port}" for ip in ips)
+        if not mdns_url and hostname:
+            urls.append(f"http://{hostname}.local:{port}")
     public_host = os.environ.get("VK_PUBLIC_HOST", "").strip()
-    if public_host:
+    if public_host and not public_url:
         urls.insert(0, f"http://{public_host}:{port}")
 
     with SessionLocal() as session:
