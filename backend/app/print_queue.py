@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 from datetime import datetime, timezone
+import logging
 
 from fastapi import HTTPException
 from sqlalchemy import func
@@ -29,6 +30,8 @@ OFFEN = "offen"
 ERFOLGREICH = "erfolgreich"
 FEHLGESCHLAGEN = "fehlgeschlagen"
 ABGEBROCHEN = "abgebrochen"
+
+logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
@@ -63,8 +66,9 @@ def _versuch(session: Session, auftrag: models.Druckauftrag, printer: PrinterAda
     try:
         result = printer.send(payload)
         ok, detail = result.ok, result.detail
-    except Exception as exc:  # Adapter, der nicht sauber abfängt
+    except Exception as exc:  # Adapter, der nicht sauber abfängt  # noqa: BLE001
         ok, detail = False, f"Ausnahme: {exc}"
+        logger.exception("Druckadapter: Ausnahme beim Senden an den Drucker")
 
     auftrag.versuche += 1
     auftrag.drucker = printer.name
