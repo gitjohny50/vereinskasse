@@ -178,8 +178,9 @@ async def _startup_receipt_task(stop: asyncio.Event) -> None:
                 hw_service.run_startup_receipt(session, info)
 
         await asyncio.to_thread(_druck)
-    except Exception:  # pragma: no cover - Startbeleg darf Backend nie verhindern
-        pass
+    except Exception as e:  # pragma: no cover - Startbeleg darf Backend nie verhindern
+    import logging
+    logging.debug(f"Startup receipt failed: {e}")
 
 
 @asynccontextmanager
@@ -205,8 +206,11 @@ async def lifespan(_app: FastAPI):
             task.cancel()
             try:
                 await task
-            except (asyncio.CancelledError, Exception):
-                pass
+            except asyncio.CancelledError:
+        pass
+    except Exception as e:  # pragma: no cover
+        import logging
+        logging.debug(f"Task cleanup failed: {e}")
 
 
 app = FastAPI(title="Vereinskasse", version=settings.app_version, lifespan=lifespan)
