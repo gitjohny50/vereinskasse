@@ -137,9 +137,10 @@ def erstelle_z(session: Session, kassenprofil_id: int, benutzer: models.Benutzer
 
     # Druck über die Warteschlange (best effort - der Abschluss ist gespeichert).
     try:
-        druck_bericht(session, abschluss.id)
-    except Exception:  # pragma: no cover
-        pass
+      druck_bericht(session, abschluss.id)
+        except Exception as e:  # pragma: no cover
+    import logging
+    logging.warning(f"Report printing failed: {e}")
     session.refresh(abschluss)
     return abschluss
 
