@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import getpass
+import logging
 import os
 import socket
 from contextlib import asynccontextmanager
@@ -28,6 +29,8 @@ from .routers import print_queue as print_queue_router
 from . import print_queue
 from .seed import seed_all
 from .timeutils import local_tz, now_local
+
+log = logging.getLogger(__name__)
 
 
 def _worker_intervall() -> float:
@@ -178,9 +181,8 @@ async def _startup_receipt_task(stop: asyncio.Event) -> None:
                 hw_service.run_startup_receipt(session, info)
 
         await asyncio.to_thread(_druck)
-    except Exception as e:  # pragma: no cover - Startbeleg darf Backend nie verhindern
-    import logging
-    logging.debug(f"Startup receipt failed: {e}")
+    except Exception as exc:  # pragma: no cover - Startbeleg darf Backend nie verhindern
+        log.debug("Startup receipt failed: %s", exc)
 
 
 @asynccontextmanager
@@ -207,10 +209,9 @@ async def lifespan(_app: FastAPI):
             try:
                 await task
             except asyncio.CancelledError:
-        pass
-    except Exception as e:  # pragma: no cover
-        import logging
-        logging.debug(f"Task cleanup failed: {e}")
+                pass
+            except Exception as exc:  # pragma: no cover
+                log.debug("Task cleanup failed: %s", exc)
 
 
 app = FastAPI(title="Vereinskasse", version=settings.app_version, lifespan=lifespan)
