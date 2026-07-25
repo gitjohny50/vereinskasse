@@ -75,6 +75,31 @@ describe('Verkauf Component', () => {
     });
   });
 
+  test('sollte nach fehlgeschlagener Live-Berechnung beim Kassieren erneut berechnen', async () => {
+    const user = userEvent.setup();
+    (api.artikel as Mock).mockResolvedValue([
+      { id: 101, name: 'Test-Cola', preis_cent: 1250, aktiv: true, archiviert: false },
+    ]);
+    (api.berechnung as Mock)
+      .mockRejectedValueOnce(new ApiError(500, 'Berechnung fehlgeschlagen.'))
+      .mockResolvedValueOnce({ gesamt_cent: 1250, waren_cent: 1250, pfand_cent: 0 });
+
+    render(<Verkauf profil={mockProfil} />);
+
+    const artikelButton = await screen.findByText('Test-Cola');
+    await user.click(artikelButton);
+
+    const fehler = await screen.findByText('Berechnung fehlgeschlagen.');
+    expect(fehler).toBeInTheDocument();
+
+    const kassierenButton = screen.getByRole('button', { name: /Kassieren/i });
+    await user.click(kassierenButton);
+
+    const pfandModalTitle = await screen.findByText('Pfand zurück?');
+    expect(pfandModalTitle).toBeInTheDocument();
+    expect((api.berechnung as Mock).mock.calls.length).toBeGreaterThan(1);
+  });
+
   test('sollte den kompletten Bezahlvorgang mit Barzahlung simulieren', async () => {
     const user = userEvent.setup();
     (api.artikel as Mock).mockResolvedValue([

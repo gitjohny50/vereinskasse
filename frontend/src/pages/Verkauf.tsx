@@ -33,6 +33,9 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
   const korbListeRef = useRef<HTMLDivElement | null>(null);
   const sliderDrag = useRef(false);
   const abschlussLaeuft = useRef(false);
+  const berechnungSeq = useRef(0);
+  const berechnungKeyRef = useRef<string | null>(null);
+  const berechnungPromise = useRef<{ key: string; promise: Promise<Berechnung | null> } | null>(null);
 
   const artById = useMemo(() => new Map(artikel.map((a) => [a.id, a])), [artikel]);
   const katById = useMemo(() => new Map(kategorien.map((k) => [k.id, k])), [kategorien]);
@@ -63,48 +66,40 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
     [pfandRueck, profil.pfand_aktiv],
   );
 
-  useEffect(() => {
-    if (artikelItems.length === 0 && pfandItems.length === 0) {
-      setBerech(null);
-      setBerechnungBusy(false);
-      setBerechnungFehler(null);
-      return;
-    }
-    let aktiv = true;
-    setBerechnungBusy(true);
-    setBerechnungFehler(null);
-    setBerech(null);
-    api.berechnung({
-      kassenprofil_id: profil.id, veranstaltung_id: null,
-      artikel: artikelItems, pfand_rueckgaben: pfandItems,
-    }).then((b) => {
-      if (aktiv) setBerech(b);
-    }).catch((e) => {
-      if (aktiv) {
-        setBerech(null);
-        setBerechnungFehler(e instanceof ApiError ? e.message : "Berechnung fehlgeschlagen.");
-      }
-    }).finally(() => {
-      if (aktiv) setBerechnungBusy(false);
-    });
-    return () => { aktiv = false; };
-  }, [artikelItems, pfandItems, profil.id]);
-
   const sichtbar = katFilter === "alle" ? artikel : artikel.filter((a) => a.kategorie_id === katFilter);
   const zahlart = zahlarten.find((z) => z.id === zahlId) ?? null;
   const pfandAktiv = profil.pfand_aktiv !== false;
+  const hatPositionen = artikelItems.length > 0 || pfandItems.length > 0;
+  const berechnungPayload = useMemo(() => ({
+    kassenprofil_id: profil.id, veranstaltung_id: null,
+    artikel: artikelItems, pfand_rueckgaben: pfandItems,
+  }), [artikelItems, pfandItems, profil.id]);
+  const berechnungKey = useMemo(() => JSON.stringify(berechnungPayload), [berechnungPayload]);
+  const berechnungAktuell = berech !== null && berechnungKeyRef.current === berechnungKey;
   const gesamt = berech?.gesamt_cent ?? 0;
   const gegebenCent = euroToCents(gegeben);
   const rueckgeld = zahlart?.rueckgeld_berechnen && gegebenCent !== null && gegebenCent >= gesamt ? gegebenCent - gesamt : null;
   const rueckgeldStueckelung = useMemo(() => berechneStueckelung(rueckgeld ?? 0), [rueckgeld]);
-  const hatPositionen = artikelItems.length > 0 || pfandItems.length > 0;
-  const kannKassieren = !busy && !berechnungBusy && !berechnungFehler && berech !== null && (gesamt !== 0 || pfandItems.length > 0);
+  const kannKassieren = !busy && hatPositionen;
   const offenePositionen = artikelItems.reduce((sum, i) => sum + i.menge, 0) + pfandItems.reduce((sum, i) => sum + i.menge, 0);
   const cashPresets = useMemo(() => {
     const basis = [500, 1000, 2000, 5000];
     const gerundet = [500, 1000, 2000, 5000].find((v) => v >= gesamt);
     return Array.from(new Set([gesamt, gerundet, ...basis].filter((v): v is number => typeof v === "number" && v > 0))).sort((a, b) => a - b);
   }, [gesamt]);
+
+  useEffect(() => {
+    if (!hatPositionen) {
+      berechnungSeq.current += 1;
+      berechnungKeyRef.current = null;
+      berechnungPromise.current = null;
+      setBerech(null);
+      setBerechnungBusy(false);
+      setBerechnungFehler(null);
+      return;
+    }
+    void berechnungLaden();
+  }, [berechnungKey, hatPositionen]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(updateKorbScroll);
@@ -133,11 +128,38 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
     setCheckoutOpen(false);
     setFehler(null);
   }
-  function checkoutStarten() {
+  async function berechnungLaden(): Promise<Berechnung | null> {
+    if (!hatPositionen) return null;
+    if (berechnungAktuell) return berech;
+    if (berechnungPromise.current?.key === berechnungKey) return berechnungPromise.current.promise;
+
+    const seq = ++berechnungSeq.current;
+    setBerechnungBusy(true);
+    setBerechnungFehler(null);
+    const promise = api.berechnung(berechnungPayload).then((b) => {
+      if (seq === berechnungSeq.current) {
+        berechnungKeyRef.current = berechnungKey;
+        setBerech(b);
+      }
+      return b;
+    }).catch((e) => {
+      const meldung = e instanceof ApiError ? e.message : "Berechnung fehlgeschlagen.";
+      if (seq === berechnungSeq.current) {
+        setBerechnungFehler(meldung);
+      }
+      return null;
+    }).finally(() => {
+      if (seq === berechnungSeq.current) setBerechnungBusy(false);
+      if (berechnungPromise.current?.key === berechnungKey) berechnungPromise.current = null;
+    });
+    berechnungPromise.current = { key: berechnungKey, promise };
+    return promise;
+  }
+  async function checkoutStarten() {
     if (!hatPositionen) return;
-    if (berechnungBusy) { setFehler("Bitte kurz warten, die Summe wird noch berechnet."); return; }
-    if (berechnungFehler) { setFehler(berechnungFehler); return; }
-    if (!berech) { setFehler("Summe konnte noch nicht berechnet werden."); return; }
+    const aktuelleBerechnung = await berechnungLaden();
+    if (!aktuelleBerechnung) { setFehler("Summe konnte nicht berechnet werden."); return; }
+    if (aktuelleBerechnung.gesamt_cent === 0 && pfandItems.length === 0) { setFehler("Summe ist 0,00 €."); return; }
     setFehler(null);
     setCheckoutOpen(true);
     if (pfandAktiv && pfandarten.length > 0) setCheckoutStep("pfand-frage");
@@ -194,10 +216,10 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
   async function abschliessen(methode: Zahlungsmethode | null = zahlart) {
     if (abschlussLaeuft.current) return;
     if (!methode) { setFehler("Zahlungsart wählen."); return; }
-    if (berechnungBusy) { setFehler("Bitte kurz warten, die Summe wird noch berechnet."); return; }
-    if (berechnungFehler) { setFehler(berechnungFehler); return; }
-    if (!berech) { setFehler("Summe konnte noch nicht berechnet werden."); return; }
-    if (methode.rueckgeld_berechnen && gegebenCent !== null && gegebenCent < gesamt) { setFehler("Gegebener Betrag ist zu gering."); return; }
+    const aktuelleBerechnung = await berechnungLaden();
+    if (!aktuelleBerechnung) { setFehler("Summe konnte nicht berechnet werden."); return; }
+    if (aktuelleBerechnung.gesamt_cent === 0 && pfandItems.length === 0) { setFehler("Summe ist 0,00 €."); return; }
+    if (methode.rueckgeld_berechnen && gegebenCent !== null && gegebenCent < aktuelleBerechnung.gesamt_cent) { setFehler("Gegebener Betrag ist zu gering."); return; }
     abschlussLaeuft.current = true;
     setBusy(true); setFehler(null);
     try {
@@ -219,7 +241,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
     setZahlId(z.id);
     setFehler(null);
     if (z.rueckgeld_berechnen) setCheckoutStep("bar");
-    else abschliessen(z);
+    else void abschliessen(z);
   }
 
   if (fehler && artikel.length === 0) return <p className="login-error">{fehler}</p>;
