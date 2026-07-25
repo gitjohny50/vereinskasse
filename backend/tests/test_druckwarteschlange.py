@@ -77,7 +77,7 @@ def test_jedes_stueck_eigenes_ticket(client):
 
 
 def test_beleg_auf_knopfdruck(client):
-    """Beleg lässt sich gezielt zweifach anfordern: Kunde + Vereinskasse."""
+    """Beleg lässt sich gezielt einmal als Kundenbeleg anfordern."""
     pid, arts, zm = _kasse(client)
     v = client.post("/api/verkauf", json={
         "kassenprofil_id": pid, "artikel": [{"artikel_id": arts["Pommes"]["id"], "menge": 1}],
@@ -85,8 +85,8 @@ def test_beleg_auf_knopfdruck(client):
     r = client.post(f"/api/verkauf/{v['id']}/beleg")
     assert r.status_code == 200 and r.json()["ok"] is True
     belege = [j for j in client.get("/api/druckwarteschlange").json() if j["dokumenttyp"] == "Beleg"]
-    assert len(belege) == 2
-    assert any("Vereinskasse" in j["bezeichnung"] for j in belege)
+    assert len(belege) == 1
+    assert belege[0]["bezeichnung"] == f"Beleg {v['belegnummer']}"
 
 
 def test_wiederholung_bis_max_dann_fehlgeschlagen():
