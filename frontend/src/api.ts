@@ -22,6 +22,10 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(`/api${path}`, { ...init, headers });
+  if (res.status === 401) {
+    setToken(null);
+    window.dispatchEvent(new CustomEvent("vk-auth-expired"));
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     let detail = text;

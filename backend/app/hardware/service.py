@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import textwrap
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -241,6 +242,15 @@ def _zeile(links: str, rechts: str, width: int) -> str:
     return links.ljust(platz) + rechts
 
 
+def _zeilen(links: str, rechts: str, width: int) -> list[str]:
+    """Umbrochene Zeilen mit dem Betrag rechts in der letzten Zeile."""
+    platz = max(8, width - len(rechts) - 1)
+    teile = textwrap.wrap(links, width=platz, break_long_words=True, break_on_hyphens=True) or [""]
+    zeilen = teile[:-1]
+    zeilen.append(_zeile(teile[-1], rechts, width))
+    return zeilen
+
+
 def _print_logo_if_configured(b: EscposBuilder, cfg: dict[str, str]) -> None:
     if cfg.get("bon.logo.aktiv", "0") != "1":
         return
@@ -257,6 +267,7 @@ def build_receipt_bytes(
     cfg: dict[str, str], *, bonkopf: str, bonfuss: str, belegnummer: str, zeitpunkt: datetime,
     bediener: str, positionen: list[dict], waren_cent: int, pfand_cent: int, gesamt_cent: int,
     zahlung_name: str, gegeben_cent: int, rueckgeld_cent: int, schublade: bool, kopie: bool = False,
+    zusatz: str = "",
 ) -> bytes:
     """Baut den Kassenbon (Lastenheft 14). Bei kopie=True als Nachdruck gekennzeichnet."""
     width = int(cfg.get("bon.breite_zeichen", "42"))
@@ -269,6 +280,8 @@ def build_receipt_bytes(
     b.size(1, 1).bold(False)
     if kopie:
         b.line("*** KOPIE / NACHDRUCK ***")
+    if zusatz:
+        b.line(zusatz)
     b.feed(1).align("left")
     b.line("-" * width)
     b.line(_zeile("Beleg-Nr:", belegnummer, width))
@@ -276,7 +289,8 @@ def build_receipt_bytes(
     b.line(_zeile("Bediener:", bediener, width))
     b.line("-" * width)
     for p in positionen:
-        b.line(_zeile(f'{p["menge"]} x {p["bezeichnung"]}', format_cents(p["gesamt_cent"]), width))
+        for zeile in _zeilen(f'{p["menge"]} x {p["bezeichnung"]}', format_cents(p["gesamt_cent"]), width):
+            b.line(zeile)
     b.line("-" * width)
     b.line(_zeile("Waren:", format_cents(waren_cent), width))
     if pfand_cent != 0:

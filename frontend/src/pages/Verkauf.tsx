@@ -25,6 +25,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
   const [zahlId, setZahlId] = useState<number | null>(null);
   const [gegeben, setGegeben] = useState("");
   const [busy, setBusy] = useState(false);
+  const [belegDruckBusy, setBelegDruckBusy] = useState(false);
   const [fehler, setFehler] = useState<string | null>(null);
   const [erfolg, setErfolg] = useState<V | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -81,6 +82,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
   const rueckgeld = zahlart?.rueckgeld_berechnen && gegebenCent !== null && gegebenCent >= gesamt ? gegebenCent - gesamt : null;
   const rueckgeldStueckelung = useMemo(() => berechneStueckelung(rueckgeld ?? 0), [rueckgeld]);
   const kannKassieren = !busy && hatPositionen;
+  const sichtbarerBerechnungFehler = berechnungFehler && !berechnungBusy && !berechnungAktuell ? berechnungFehler : null;
   const offenePositionen = artikelItems.reduce((sum, i) => sum + i.menge, 0) + pfandItems.reduce((sum, i) => sum + i.menge, 0);
   const cashPresets = useMemo(() => {
     const basis = [500, 1000, 2000, 5000];
@@ -138,11 +140,21 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
     };
   }, [warenkorb, pfandRueck, berech]);
 
-  function plus(id: number) { setWarenkorb((w) => ({ ...w, [id]: (w[id] ?? 0) + 1 })); }
+  function warenkorbGeaendert() {
+    setFehler(null);
+    setBerechnungFehler(null);
+    setGegeben("");
+  }
+  function plus(id: number) {
+    warenkorbGeaendert();
+    setWarenkorb((w) => ({ ...w, [id]: (w[id] ?? 0) + 1 }));
+  }
   function setMenge(id: number, n: number) {
+    warenkorbGeaendert();
     setWarenkorb((w) => { const c = { ...w }; if (n <= 0) delete c[id]; else c[id] = n; return c; });
   }
   function setRueck(id: number, n: number) {
+    warenkorbGeaendert();
     setPfandRueck((p) => { const c = { ...p }; if (n <= 0) delete c[id]; else c[id] = n; return c; });
   }
   function leeren() {
@@ -217,13 +229,13 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
   async function abschliessen(methode: Zahlungsmethode | null = zahlart) {
     if (abschlussLaeuft.current) return;
     if (!methode) { setFehler("Zahlungsart wählen."); return; }
-    const aktuelleBerechnung = await berechnungLaden();
-    if (!aktuelleBerechnung) { setFehler("Summe konnte nicht berechnet werden."); return; }
-    if (aktuelleBerechnung.gesamt_cent === 0 && pfandItems.length === 0) { setFehler("Summe ist 0,00 €."); return; }
-    if (methode.rueckgeld_berechnen && gegebenCent !== null && gegebenCent < aktuelleBerechnung.gesamt_cent) { setFehler("Gegebener Betrag ist zu gering."); return; }
     abschlussLaeuft.current = true;
     setBusy(true); setFehler(null);
     try {
+      const aktuelleBerechnung = await berechnungLaden();
+      if (!aktuelleBerechnung) { setFehler("Summe konnte nicht berechnet werden."); return; }
+      if (aktuelleBerechnung.gesamt_cent === 0 && pfandItems.length === 0) { setFehler("Summe ist 0,00 €."); return; }
+      if (methode.rueckgeld_berechnen && gegebenCent !== null && gegebenCent < aktuelleBerechnung.gesamt_cent) { setFehler("Gegebener Betrag ist zu gering."); return; }
       const v = await api.verkaufAbschluss({
         kassenprofil_id: profil.id, veranstaltung_id: null,
         artikel: artikelItems, pfand_rueckgaben: pfandItems,
@@ -243,6 +255,18 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
     setFehler(null);
     if (z.rueckgeld_berechnen) setCheckoutStep("bar");
     else void abschliessen(z);
+  }
+  async function belegDrucken() {
+    if (!erfolg || belegDruckBusy) return;
+    setBelegDruckBusy(true);
+    setFehler(null);
+    try {
+      await api.belegDrucken(erfolg.id);
+    } catch (e) {
+      setFehler(e instanceof ApiError ? e.message : "Belegdruck fehlgeschlagen.");
+    } finally {
+      setBelegDruckBusy(false);
+    }
   }
 
   if (fehler && artikel.length === 0) return <p className="login-error">{fehler}</p>;
@@ -341,7 +365,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
           </div>
 
           {fehler && <p className="login-error">{fehler}</p>}
-          {!fehler && berechnungFehler && <p className="login-error">{berechnungFehler}</p>}
+          {!fehler && sichtbarerBerechnungFehler && <p className="login-error">{sichtbarerBerechnungFehler}</p>}
 
           <div className="checkout-actions">
             <button className="btn" data-tour="verkauf-leeren" onClick={leeren} disabled={busy}>Leeren</button>
@@ -357,7 +381,9 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
             {erfolg.zahlung && erfolg.zahlung.rueckgeld_cent > 0 && (
               <div className="rueckgeld-gross">Rückgeld {formatCents(erfolg.zahlung.rueckgeld_cent)}</div>
             )}
-            <button className="btn btn-sm" onClick={() => api.belegDrucken(erfolg.id)}>Beleg drucken</button>
+            <button className="btn btn-sm" disabled={belegDruckBusy} onClick={belegDrucken}>
+              {belegDruckBusy ? "Drucke…" : "Beleg drucken"}
+            </button>
           </div>
         )}
       </aside>
@@ -483,7 +509,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
                 )}
                 {gegebenCent === null && <p className="cash-hint">Ohne Eingabe wird passend kassiert.</p>}
                 {fehler && <p className="login-error">{fehler}</p>}
-                {!fehler && berechnungFehler && <p className="login-error">{berechnungFehler}</p>}
+                {!fehler && sichtbarerBerechnungFehler && <p className="login-error">{sichtbarerBerechnungFehler}</p>}
                 <div className="checkout-footer-actions">
                   <button type="button" className="btn" disabled={busy} onClick={() => setCheckoutStep("zahlung")}>Zurück</button>
                   <button type="button" className="btn btn-primary kassieren-btn" disabled={busy || !kannKassieren} onClick={() => abschliessen()}>

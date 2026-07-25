@@ -55,6 +55,14 @@ export function App() {
     if (!getToken()) { setLoading(false); return; }
     api.me().then(setSession).catch(() => setToken(null)).finally(() => setLoading(false));
   }, []);
+  useEffect(() => {
+    const abgelaufen = () => {
+      setToken(null);
+      setSession(null);
+    };
+    window.addEventListener("vk-auth-expired", abgelaufen);
+    return () => window.removeEventListener("vk-auth-expired", abgelaufen);
+  }, []);
 
   async function ladeProfile() {
     const ps = await api.profile();
@@ -151,6 +159,7 @@ export function App() {
           <div className="top-actions">
             {themeSwitch}
             <div className="user-chip"><b>{session.name}</b><span>{session.rolle}</span></div>
+            <button className="btn btn-sm reload-btn" aria-label="App neu laden" title="App neu laden" onClick={() => window.location.reload()}>Neu laden</button>
             <button className="btn btn-sm tutorial-help" aria-label="Tutorial starten" title="Tutorial starten" onClick={() => setTutorialOpen(true)}>?</button>
             <button className="btn btn-sm" onClick={handleLogout}>Abmelden</button>
           </div>
