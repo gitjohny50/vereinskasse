@@ -1,5 +1,5 @@
-import requests
 import logging
+import requests
 
 # --- Konfiguration ---
 BASE_URL = "http://localhost:8000"
