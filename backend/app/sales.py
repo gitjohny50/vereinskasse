@@ -11,13 +11,15 @@ Alle Beträge sind ganzzahlige Cent.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from . import models
-from . import print_queue
+from . import models, print_queue
+
+log = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
@@ -167,7 +169,7 @@ def finalisiere(
     # macht den bereits gebuchten Verkauf nicht rückgängig - er ist erfasst.
     try:
         print_queue.druck_verkauf(session, verkauf.id, schublade=zm.schublade_oeffnen, sofort=False)
-    except Exception:  # pragma: no cover - Druck ist best effort
-        pass
+    except Exception as exc:  # noqa: BLE001  # pragma: no cover - Druck ist best effort
+        log.warning("Sales print queue failed: %s", exc)
     session.refresh(verkauf)
     return verkauf

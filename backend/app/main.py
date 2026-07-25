@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import getpass
+import logging
 import os
 import socket
 from contextlib import asynccontextmanager
@@ -18,16 +19,19 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from . import print_queue
 from .config import settings
 from .database import SessionLocal, init_db
 from .hardware import service as hw_service
 from .hardware.service import ensure_defaults
 from .models import Artikel, Benutzer, Kassenprofil
-from .routers import analytics, auth, catalog, diagnostics, health, profiles, reports, sales, settings as settings_router, users
+from .routers import analytics, auth, catalog, diagnostics, health, profiles, reports, sales, users
 from .routers import print_queue as print_queue_router
-from . import print_queue
+from .routers import settings as settings_router
 from .seed import seed_all
 from .timeutils import local_tz, now_local
+
+log = logging.getLogger(__name__)
 
 
 def _worker_intervall() -> float:
@@ -57,7 +61,7 @@ async def _druck_worker(stop: asyncio.Event) -> None:
                     print_queue.verarbeite_offene(session)
             await asyncio.to_thread(_lauf)
         except Exception:  # pragma: no cover - Worker darf nie sterben
-            pass
+            log.exception("Print worker failed.")
 
 
 def _startup_delay() -> float:
@@ -99,18 +103,24 @@ def _internet_status() -> str:
 
 
 def _startup_info() -> dict[str, str | list[str]]:
-    host = os.environ.get("VK_HOST", "0.0.0.0")
+    host = os.environ.get("VK_HOST", settings.host)
     port = os.environ.get("VK_PORT", "8000")
     ips = _local_ips()
     hostname = socket.gethostname()
     mdns_name = os.environ.get("VK_MDNS_NAME", hostname or "kasse").strip().removesuffix(".local")
-    mdns_url = f"http://{mdns_name}.local:{port}" if mdns_name else ""
-    urls = [mdns_url] if mdns_url else []
-    urls.extend(f"http://{ip}:{port}" for ip in ips)
-    if not mdns_url and hostname:
-        urls.append(f"http://{hostname}.local:{port}")
+    public_url = os.environ.get("VK_PUBLIC_URL", "").strip().rstrip("/")
+    if public_url:
+        mdns_url = public_url
+        urls = [public_url]
+        urls.extend(f"https://{ip}" for ip in ips)
+    else:
+        mdns_url = f"http://{mdns_name}.local:{port}" if mdns_name else ""
+        urls = [mdns_url] if mdns_url else []
+        urls.extend(f"http://{ip}:{port}" for ip in ips)
+        if not mdns_url and hostname:
+            urls.append(f"http://{hostname}.local:{port}")
     public_host = os.environ.get("VK_PUBLIC_HOST", "").strip()
-    if public_host:
+    if public_host and not public_url:
         urls.insert(0, f"http://{public_host}:{port}")
 
     with SessionLocal() as session:
@@ -173,7 +183,7 @@ async def _startup_receipt_task(stop: asyncio.Event) -> None:
 
         await asyncio.to_thread(_druck)
     except Exception:  # pragma: no cover - Startbeleg darf Backend nie verhindern
-        pass
+        log.debug("Startup receipt failed.", exc_info=True)
 
 
 @asynccontextmanager
@@ -199,8 +209,10 @@ async def lifespan(_app: FastAPI):
             task.cancel()
             try:
                 await task
-            except (asyncio.CancelledError, Exception):
+            except asyncio.CancelledError:
                 pass
+            except Exception:  # pragma: no cover
+                log.debug("Task cleanup failed.", exc_info=True)
 
 
 app = FastAPI(title="Vereinskasse", version=settings.app_version, lifespan=lifespan)

@@ -1,6 +1,7 @@
 import os
 import random
-from locust import HttpUser, task, between, events
+
+from locust import HttpUser, between, events, task
 from locust.exception import StopUser
 
 # --- Konfiguration ---

@@ -13,15 +13,15 @@ os.environ.setdefault("VK_INITIAL_ADMIN_PIN", "123456")
 os.environ.setdefault("VK_PBKDF2_ITERATIONS", "1000")  # nur für Tests, Produktiv bleibt hoch
 os.environ.setdefault("VK_PRINT_WORKER", "0")  # Hintergrund-Druckworker in Tests aus (deterministisch)
 
-import pytest  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
+import pytest
+from fastapi.testclient import TestClient
 
-from app.database import Base, SessionLocal, engine  # noqa: E402
-from app.hardware.service import ensure_defaults  # noqa: E402
-from app.main import app  # noqa: E402
-from app.models import Benutzer  # noqa: E402
-from app.seed import ensure_roles  # noqa: E402
-from app.security import hash_pin  # noqa: E402
+from app.database import Base, SessionLocal, engine
+from app.hardware.service import ensure_defaults
+from app.main import app
+from app.models import Benutzer
+from app.security import hash_pin
+from app.seed import ensure_roles
 
 
 def _reset_and_seed():
