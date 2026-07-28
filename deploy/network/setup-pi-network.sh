@@ -34,16 +34,18 @@ if command -v nmcli >/dev/null 2>&1; then
       AP_PASSWORD="$(openssl rand -base64 18 | tr -dc 'A-Za-z0-9' | head -c 16)"
     fi
     nmcli connection add type wifi ifname wlan0 con-name vereinskasse-local-ap autoconnect no ssid "${AP_SSID}"
-    nmcli connection modify vereinskasse-local-ap 802-11-wireless.mode ap 802-11-wireless.band bg ipv4.method shared ipv4.addresses "${AP_ADDRESS}/24" ipv6.method disabled
+    nmcli connection modify vereinskasse-local-ap 802-11-wireless.mode ap 802-11-wireless.band bg 802-11-wireless.hidden yes ipv4.method shared ipv4.addresses "${AP_ADDRESS}/24" ipv6.method disabled
     nmcli connection modify vereinskasse-local-ap wifi-sec.key-mgmt wpa-psk wifi-sec.psk "${AP_PASSWORD}"
     install -d -m 0750 /etc/vereinskasse
     {
       echo "SSID=${AP_SSID}"
       echo "PASSWORT=${AP_PASSWORD}"
+      echo "HIDDEN=1"
       echo "HINWEIS=Profil ist deaktiviert. Aktivieren mit: sudo nmcli connection up vereinskasse-local-ap"
     } > /etc/vereinskasse/local-ap.txt
     chmod 0600 /etc/vereinskasse/local-ap.txt
   fi
+  nmcli connection modify vereinskasse-local-ap 802-11-wireless.hidden yes connection.autoconnect no
 fi
 
 # Falls eine ältere Version das Captive Portal eingerichtet hatte: entfernen.

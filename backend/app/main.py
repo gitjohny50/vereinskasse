@@ -123,6 +123,14 @@ def _startup_info() -> dict[str, str | list[str]]:
     public_host = os.environ.get("VK_PUBLIC_HOST", "").strip()
     if public_host and not public_url:
         urls.insert(0, f"http://{public_host}:{port}")
+    local_ap: dict[str, str] = {}
+    try:
+        for line in Path("/etc/vereinskasse/local-ap.txt").read_text(encoding="utf-8").splitlines():
+            key, sep, value = line.partition("=")
+            if sep:
+                local_ap[key.strip().lower()] = value.strip()
+    except OSError:
+        pass
 
     with SessionLocal() as session:
         profil = session.query(Kassenprofil).filter(Kassenprofil.aktiv.is_(True)).order_by(Kassenprofil.name).first()
@@ -162,6 +170,9 @@ def _startup_info() -> dict[str, str | list[str]]:
         "host": host,
         "urls": urls,
         "users": benutzer_liste,
+        "wifi_ssid": local_ap.get("ssid", ""),
+        "wifi_passwort": local_ap.get("passwort", ""),
+        "wifi_hidden": local_ap.get("hidden", "1"),
     }
 
 

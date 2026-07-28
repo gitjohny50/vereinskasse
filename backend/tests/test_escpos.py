@@ -2,7 +2,7 @@ import base64
 from datetime import datetime, timezone
 
 from app.hardware.escpos import EscposBuilder
-from app.hardware.service import build_receipt_bytes, build_test_page, build_ticket_bytes
+from app.hardware.service import build_receipt_bytes, build_startup_receipt, build_test_page, build_ticket_bytes
 
 
 def test_init_contains_reset_and_codepage():
@@ -123,3 +123,22 @@ def test_test_page_prints_configured_logo_and_qr():
 def test_test_page_omits_qr_when_url_empty():
     payload = build_test_page({"diagnose.testseite.qr_url": ""})
     assert b"\x1d\x28\x6b" not in payload
+
+
+def test_startup_receipt_contains_hidden_wifi_qr_and_quickstart():
+    payload = build_startup_receipt(
+        {"schnitt.vorschub_zeilen": "0"},
+        {
+            "zeit": "28.07.2026 12:00:00",
+            "urls": ["http://kasse.local:8000"],
+            "users": ["1: Ute (bediener)"],
+            "wifi_ssid": "Vereinskasse-kasse",
+            "wifi_passwort": "strenggeheim",
+            "wifi_hidden": "1",
+        },
+    )
+    assert b"QR: Kasse oeffnen" in payload
+    assert b"QR: Verstecktes WLAN" in payload
+    assert b"WIFI:T:WPA;S:Vereinskasse-kasse;P:strenggeheim;H:true;;" in payload
+    assert b"Quickstart" in payload
+    assert b"Anderes WLAN" in payload

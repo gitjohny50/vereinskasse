@@ -104,13 +104,25 @@ def build_startup_receipt(cfg: dict[str, str], info: dict[str, str | list[str]])
     if not isinstance(users, list):
         users = []
     qr_url = str(urls[0]) if urls else ""
+    wifi_ssid = str(info.get("wifi_ssid", "")).strip()
+    wifi_passwort = str(info.get("wifi_passwort", "")).strip()
+    wifi_hidden = str(info.get("wifi_hidden", "1")).strip().lower() not in {"0", "false", "nein", "no"}
     b = _builder(cfg)
     b.init()
     b.align("center").bold(True).size(1, 2).line("VEREINSKASSE").size(1, 1)
     b.line("Systemstart erfolgreich").bold(False)
     b.line(str(info.get("zeit", "-"))).feed(1)
     if qr_url:
+        b.bold(True).line("QR: Kasse oeffnen").bold(False)
         b.qr(qr_url, module_size=5)
+        b.feed(1)
+    if wifi_ssid:
+        b.bold(True).line("QR: Verstecktes WLAN").bold(False)
+        b.line("Am iPad: Anderes WLAN waehlen")
+        b.qr(_wifi_qr_payload(wifi_ssid, wifi_passwort, hidden=wifi_hidden), module_size=5)
+        b.line(f"SSID: {wifi_ssid}")
+        if wifi_passwort:
+            b.line(f"Passwort: {wifi_passwort}")
         b.feed(1)
     b.align("left")
     b.line("-" * width)
@@ -146,9 +158,30 @@ def build_startup_receipt(cfg: dict[str, str], info: dict[str, str | list[str]])
     else:
         b.line("Keine Benutzer gefunden")
     b.line("-" * width)
+    b.bold(True).line("Quickstart").bold(False)
+    for step in [
+        "1. iPad mit dem Kassen-WLAN verbinden.",
+        "   Ist es versteckt: WLAN-Name manuell eingeben.",
+        "2. QR 'Kasse oeffnen' scannen oder Adresse unten nutzen.",
+        "3. Benutzer waehlen und mit PIN anmelden.",
+        "4. Verkauf starten; bei Problemen Drucke pruefen.",
+    ]:
+        for zeile in textwrap.wrap(step, width=width, subsequent_indent="   ", break_long_words=False) or [""]:
+            b.line(zeile)
+    b.line("-" * width)
     b.align("center").bold(True).line("Bereit fuer Verkauf").bold(False)
     b.cut(mode=cfg.get("schnitt.modus", "partial"), feed_lines=int(cfg.get("schnitt.vorschub_zeilen", "3")))
     return b.build()
+
+
+def _wifi_qr_payload(ssid: str, password: str, hidden: bool = True) -> str:
+    def esc(value: str) -> str:
+        return value.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace(":", "\\:")
+
+    security = "WPA" if password else "nopass"
+    password_part = f"P:{esc(password)};" if password else ""
+    hidden_part = "H:true;" if hidden else ""
+    return f"WIFI:T:{security};S:{esc(ssid)};{password_part}{hidden_part};"
 
 
 def run_startup_receipt(session: Session, info: dict[str, str | list[str]], benutzer: str = "systemd") -> dict:
