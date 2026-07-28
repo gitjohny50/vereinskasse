@@ -142,3 +142,19 @@ def test_startup_receipt_contains_hidden_wifi_qr_and_quickstart():
     assert b"WIFI:T:WPA;S:Vereinskasse-kasse;P:strenggeheim;H:true;;" in payload
     assert b"Quickstart" in payload
     assert b"Anderes WLAN" in payload
+    assert b"Beleg aufbewahren" in payload
+    assert b"Uhrzeit pruefen" in payload
+
+
+def test_startup_receipt_always_contains_hidden_wifi_qr_section():
+    payload = build_startup_receipt(
+        {"schnitt.vorschub_zeilen": "0"},
+        {
+            "zeit": "28.07.2026 12:00:00",
+            "urls": ["http://kasse.local:8000"],
+            "users": [],
+        },
+    )
+    assert b"QR: Verstecktes WLAN" in payload
+    assert b"WIFI:T:nopass;S:Vereinskasse-kasse;H:true;;" in payload
+    assert b"Passwort: /etc/vereinskasse/local-ap.txt" in payload

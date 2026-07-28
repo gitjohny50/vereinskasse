@@ -116,14 +116,15 @@ def build_startup_receipt(cfg: dict[str, str], info: dict[str, str | list[str]])
         b.bold(True).line("QR: Kasse oeffnen").bold(False)
         b.qr(qr_url, module_size=5)
         b.feed(1)
-    if wifi_ssid:
-        b.bold(True).line("QR: Verstecktes WLAN").bold(False)
-        b.line("Am iPad: Anderes WLAN waehlen")
-        b.qr(_wifi_qr_payload(wifi_ssid, wifi_passwort, hidden=wifi_hidden), module_size=5)
-        b.line(f"SSID: {wifi_ssid}")
-        if wifi_passwort:
-            b.line(f"Passwort: {wifi_passwort}")
-        b.feed(1)
+    b.bold(True).line("QR: Verstecktes WLAN").bold(False)
+    b.line("Am iPad: Anderes WLAN waehlen")
+    b.qr(_wifi_qr_payload(wifi_ssid or "Vereinskasse-kasse", wifi_passwort, hidden=wifi_hidden), module_size=5)
+    b.line(f"SSID: {wifi_ssid or 'Vereinskasse-kasse'}")
+    if wifi_passwort:
+        b.line(f"Passwort: {wifi_passwort}")
+    else:
+        b.line("Passwort: /etc/vereinskasse/local-ap.txt")
+    b.feed(1)
     b.align("left")
     b.line("-" * width)
     for label, key in [
@@ -160,11 +161,13 @@ def build_startup_receipt(cfg: dict[str, str], info: dict[str, str | list[str]])
     b.line("-" * width)
     b.bold(True).line("Quickstart").bold(False)
     for step in [
-        "1. iPad mit dem Kassen-WLAN verbinden.",
+        "1. Beleg aufbewahren: WLAN, Adresse und Benutzer stehen hier.",
+        "2. iPad mit dem Kassen-WLAN verbinden.",
         "   Ist es versteckt: WLAN-Name manuell eingeben.",
-        "2. QR 'Kasse oeffnen' scannen oder Adresse unten nutzen.",
-        "3. Benutzer waehlen und mit PIN anmelden.",
-        "4. Verkauf starten; bei Problemen Drucke pruefen.",
+        "3. QR 'Kasse oeffnen' scannen oder Adresse unten nutzen.",
+        "4. Uhrzeit pruefen; falls falsch: Service > Diagnose stellen.",
+        "5. Benutzer waehlen und mit PIN anmelden.",
+        "6. Verkauf starten; bei Problemen Drucke pruefen.",
     ]:
         for zeile in textwrap.wrap(step, width=width, subsequent_indent="   ", break_long_words=False) or [""]:
             b.line(zeile)

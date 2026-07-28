@@ -170,7 +170,7 @@ def _startup_info() -> dict[str, str | list[str]]:
         "host": host,
         "urls": urls,
         "users": benutzer_liste,
-        "wifi_ssid": local_ap.get("ssid", ""),
+        "wifi_ssid": local_ap.get("ssid", f"Vereinskasse-{mdns_name or hostname or 'kasse'}"),
         "wifi_passwort": local_ap.get("passwort", ""),
         "wifi_hidden": local_ap.get("hidden", "1"),
     }
