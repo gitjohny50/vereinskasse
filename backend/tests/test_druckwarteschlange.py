@@ -49,6 +49,8 @@ def test_verkauf_druckt_tickets_ohne_beleg(client):
     assert len(tickets) == 1 and tickets[0]["bezeichnung"] == "Cola"
     assert "Bon" not in typen
     assert "Schublade" in typen
+    schublade_job = next(j for j in jobs if j["dokumenttyp"] == "Schublade")
+    assert schublade_job["id"] < tickets[0]["id"]
     st = client.get("/api/druckwarteschlange/status").json()
     assert st["offen"] == 0
 

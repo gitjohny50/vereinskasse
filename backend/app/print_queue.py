@@ -192,6 +192,12 @@ def druck_verkauf(session: Session, verkauf_id: int, schublade: bool, printer: P
         jobs.append(enqueue(session, dokumenttyp="Bon", payload=bon_bytes, verkauf_id=verkauf.id,
                             bezeichnung=f"Beleg {verkauf.belegnummer}"))
 
+    # Schublade separat vor den Artikeltickets öffnen, wenn kein Bon gedruckt wird
+    # (der Bon enthält den Kick bereits) und die Zahlungsart die Schublade vorsieht.
+    if schublade and not auto_beleg and cfg.get("schublade.aktiv", "1") == "1":
+        jobs.append(enqueue(session, dokumenttyp="Schublade", payload=hw.build_drawer_pulse(cfg),
+                            verkauf_id=verkauf.id, bezeichnung="Kassenschublade"))
+
     # Jedes Artikelticket als EIGENEN Auftrag: so erscheint jeder Artikel einzeln
     # im Druckprotokoll und lässt sich einzeln wiederholen; ein hängendes Ticket
     # blockiert die übrigen nicht mehr. Der Vereinsname steht als Kopfzeile darauf.
@@ -205,12 +211,6 @@ def druck_verkauf(session: Session, verkauf_id: int, schublade: bool, printer: P
         )
         jobs.append(enqueue(session, dokumenttyp="Artikelticket", payload=payload,
                             verkauf_id=verkauf.id, bezeichnung=ticket["bezeichnung"]))
-
-    # Schublade nur separat öffnen, wenn kein Bon gedruckt wird (der Bon enthält
-    # den Kick bereits) und die Zahlungsart die Schublade vorsieht.
-    if schublade and not auto_beleg and cfg.get("schublade.aktiv", "1") == "1":
-        jobs.append(enqueue(session, dokumenttyp="Schublade", payload=hw.build_drawer_pulse(cfg),
-                            verkauf_id=verkauf.id, bezeichnung="Kassenschublade"))
 
     if not sofort:
         return {"ok": True, "auftraege": len(jobs), "tickets": len(tickets), "drucker": "warteschlange"}
