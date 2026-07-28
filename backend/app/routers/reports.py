@@ -29,6 +29,7 @@ from ..models import (
 from ..schemas import (
     AbschlussArtikelResetIn,
     AbschlussArtikelResetOut,
+    AbschlussOffenOut,
     ActionResult,
     BerichtOut,
     KassenabschlussKopfOut,
@@ -39,11 +40,26 @@ router = APIRouter(prefix="/api/abschluss", tags=["kassenabschluss"],
                    dependencies=[Depends(require_admin)])
 
 
+def _ids(value: str | None) -> list[int]:
+    if not value:
+        return []
+    return [int(part) for part in value.split(",") if part.strip()]
+
+
+@router.get("/offen", response_model=AbschlussOffenOut)
+def offen(kassenprofil_id: int, session: Session = Depends(get_session)) -> AbschlussOffenOut:
+    return AbschlussOffenOut(**reports.offene_uebersicht(session, kassenprofil_id))
+
+
 @router.get("/x", response_model=BerichtOut)
 def x_bericht(kassenprofil_id: int, anfangsbestand_cent: int = 0, gezaehlt_cent: int | None = None,
+              umfang_typ: str = "alle", kategorie_ids: str | None = None, artikel_ids: str | None = None,
               session: Session = Depends(get_session)) -> BerichtOut:
     """Zwischenstand über die noch nicht abgeschlossenen Verkäufe - ohne zu buchen."""
-    return BerichtOut(**reports.x_bericht(session, kassenprofil_id, anfangsbestand_cent, gezaehlt_cent))
+    return BerichtOut(**reports.x_bericht(
+        session, kassenprofil_id, anfangsbestand_cent, gezaehlt_cent,
+        umfang_typ=umfang_typ, kategorie_ids=_ids(kategorie_ids), artikel_ids=_ids(artikel_ids),
+    ))
 
 
 @router.post("/z", response_model=BerichtOut, status_code=201)
@@ -53,6 +69,7 @@ def z_abschluss(payload: ZAbschlussIn, session: Session = Depends(get_session),
     abschluss = reports.erstelle_z(
         session, payload.kassenprofil_id, benutzer,
         anfangsbestand_cent=payload.anfangsbestand_cent, gezaehlt_cent=payload.gezaehlt_cent,
+        umfang_typ=payload.umfang_typ, kategorie_ids=payload.kategorie_ids, artikel_ids=payload.artikel_ids,
     )
     return BerichtOut(**reports.abschluss_bericht(session, abschluss))
 
@@ -90,12 +107,13 @@ def artikeldaten_zuruecksetzen(
         raise HTTPException(status_code=422, detail="Bitte mindestens einen Datenbereich auswählen.")
 
     offene = (
-        session.query(Verkauf.id)
-        .filter(Verkauf.kassenprofil_id == kassenprofil_id, Verkauf.abschluss_id.is_(None))
+        session.query(Verkaufsposition.id)
+        .join(Verkauf)
+        .filter(Verkauf.kassenprofil_id == kassenprofil_id, Verkaufsposition.abschluss_id.is_(None))
         .first()
     )
     if offene is not None:
-        raise HTTPException(status_code=409, detail="Es gibt noch offene Verkäufe. Bitte zuerst den Z-Abschluss durchführen.")
+        raise HTTPException(status_code=409, detail="Es gibt noch offene Positionen. Bitte zuerst alle Positionen abschließen.")
 
     artikel_ids = [row.id for row in session.query(Artikel.id).filter(Artikel.kassenprofil_id == kassenprofil_id).all()]
     verkauf_ids = [row.id for row in session.query(Verkauf.id).filter(Verkauf.kassenprofil_id == kassenprofil_id).all()]

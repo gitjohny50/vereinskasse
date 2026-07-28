@@ -1,8 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   api, ApiError, euroToCents, formatCents,
-  type AbschlussArtikelResetResult, type AbschlussResetOptions, type Bericht, type KassenabschlussKopf as Kopf, type Kassenprofil,
+  type AbschlussArtikelResetResult, type AbschlussOffen, type AbschlussResetOptions, type Bericht, type KassenabschlussKopf as Kopf, type Kassenprofil,
 } from "../api";
+
+type UmfangTyp = "alle" | "kategorie" | "artikel" | "rest";
 
 const DEFAULT_RESET_OPTIONS: AbschlussResetOptions = {
   belege_loeschen: true,
@@ -15,7 +17,11 @@ const DEFAULT_RESET_OPTIONS: AbschlussResetOptions = {
 
 export function Kassenabschluss({ profil }: { profil: Kassenprofil }) {
   const [x, setX] = useState<Bericht | null>(null);
+  const [offen, setOffen] = useState<AbschlussOffen | null>(null);
   const [liste, setListe] = useState<Kopf[]>([]);
+  const [umfang, setUmfang] = useState<UmfangTyp>("alle");
+  const [kategorieIds, setKategorieIds] = useState<number[]>([]);
+  const [artikelIds, setArtikelIds] = useState<number[]>([]);
   const [anfang, setAnfang] = useState("");
   const [gezaehlt, setGezaehlt] = useState("");
   const [confirm, setConfirm] = useState(false);
@@ -28,25 +34,40 @@ export function Kassenabschluss({ profil }: { profil: Kassenprofil }) {
   const [resetResult, setResetResult] = useState<AbschlussArtikelResetResult | null>(null);
   const [resetOptions, setResetOptions] = useState<AbschlussResetOptions>(DEFAULT_RESET_OPTIONS);
 
+  const anfangCent = euroToCents(anfang) ?? 0;
+  const gezaehltCent = gezaehlt.trim() === "" ? null : euroToCents(gezaehlt);
+  const kassensturzAktiv = umfang === "alle" || umfang === "rest";
+  const erwartet = (x?.bar_cent ?? 0) + anfangCent;
+  const differenz = gezaehltCent == null ? null : gezaehltCent - erwartet;
+  const scopeGueltig = umfang === "alle" || umfang === "rest" || (umfang === "kategorie" && kategorieIds.length > 0) || (umfang === "artikel" && artikelIds.length > 0);
   const laden = useCallback(async () => {
-    const [xb, l] = await Promise.all([api.xBericht(profil.id), api.abschluesse(profil.id)]);
-    setX(xb); setListe(l);
-  }, [profil.id]);
+    const [o, l] = await Promise.all([api.abschlussOffen(profil.id), api.abschluesse(profil.id)]);
+    setOffen(o); setListe(l);
+    if (scopeGueltig) {
+      setX(await api.xBericht(profil.id, kassensturzAktiv ? anfangCent : 0, kassensturzAktiv ? gezaehltCent : null, {
+        umfang_typ: umfang,
+        kategorie_ids: kategorieIds,
+        artikel_ids: artikelIds,
+      }));
+    }
+  }, [anfangCent, gezaehltCent, kassensturzAktiv, profil.id, scopeGueltig, umfang, kategorieIds, artikelIds]);
 
   useEffect(() => {
     setFehler(null); setErfolg(null); setDetail(null); setConfirm(false);
     laden().catch((e) => setFehler(e instanceof ApiError ? e.message : "Fehler beim Laden."));
   }, [laden]);
 
-  const anfangCent = euroToCents(anfang) ?? 0;
-  const gezaehltCent = gezaehlt.trim() === "" ? null : euroToCents(gezaehlt);
-  const erwartet = (x?.bar_cent ?? 0) + anfangCent;
-  const differenz = gezaehltCent == null ? null : gezaehltCent - erwartet;
-
   async function zAbschluss() {
     setBusy(true); setFehler(null);
     try {
-      const z = await api.zAbschluss({ kassenprofil_id: profil.id, anfangsbestand_cent: anfangCent, gezaehlt_cent: gezaehltCent });
+      const z = await api.zAbschluss({
+        kassenprofil_id: profil.id,
+        umfang_typ: umfang,
+        kategorie_ids: kategorieIds,
+        artikel_ids: artikelIds,
+        anfangsbestand_cent: kassensturzAktiv ? anfangCent : 0,
+        gezaehlt_cent: kassensturzAktiv ? gezaehltCent : null,
+      });
       setErfolg(z); setConfirm(false); setAnfang(""); setGezaehlt("");
       await laden();
     } catch (e) { setFehler(e instanceof ApiError ? e.message : "Abschluss fehlgeschlagen."); }
@@ -94,6 +115,17 @@ export function Kassenabschluss({ profil }: { profil: Kassenprofil }) {
     });
   }
 
+  function waehleUmfang(next: UmfangTyp) {
+    setUmfang(next);
+    setConfirm(false);
+    if (next !== "kategorie") setKategorieIds([]);
+    if (next !== "artikel") setArtikelIds([]);
+  }
+
+  function toggleId(liste: number[], id: number) {
+    return liste.includes(id) ? liste.filter((x) => x !== id) : [...liste, id];
+  }
+
   function zeit(iso: string | null) {
     return iso ? new Date(iso).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "–";
   }
@@ -107,12 +139,70 @@ export function Kassenabschluss({ profil }: { profil: Kassenprofil }) {
         <button className="btn btn-sm" onClick={() => laden().catch(() => {})}>Aktualisieren</button>
       </div>
 
+      {offen && (
+        <div className="card" style={{ marginBottom: 18 }}>
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <div className="section-title">Noch offen</div>
+              <p style={{ color: "var(--muted)", fontSize: 13, margin: "4px 0 0" }}>
+                {offen.offen_gesamt.positionen === 0
+                  ? "Alles abgeschlossen."
+                  : `${offen.offen_gesamt.positionen} Positionen · ${offen.offen_gesamt.menge} Stück · ${formatCents(offen.offen_gesamt.umsatz_cent)}`}
+              </p>
+            </div>
+            <button className="btn btn-sm" disabled={offen.offen_gesamt.positionen === 0} onClick={() => waehleUmfang("rest")}>Alle übrigen abschließen</button>
+          </div>
+          {offen.nach_kategorie.length > 0 && (
+            <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+              {offen.nach_kategorie.map((k) => (
+                <span key={k.kategorie_id ?? "pfand"} className="chip">
+                  {k.name}: {k.menge} · {formatCents(k.umsatz_cent)}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {x && (
         <div className="card" style={{ marginBottom: 18 }}>
           <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
             <div className="section-title">Aktueller Stand (X-Bericht)</div>
-            <span style={{ color: "var(--muted)", fontSize: 13 }}>{x.anzahl_verkaeufe} offene Verkäufe</span>
+            <span style={{ color: "var(--muted)", fontSize: 13 }}>{x.betroffene_belege || x.anzahl_verkaeufe} betroffene Belege</span>
           </div>
+
+          <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+            {(["alle", "kategorie", "artikel", "rest"] as UmfangTyp[]).map((u) => (
+              <button key={u} className={`chip ${umfang === u ? "on" : ""}`} onClick={() => waehleUmfang(u)}>
+                {u === "alle" ? "Alle offenen" : u === "kategorie" ? "Nach Kategorie" : u === "artikel" ? "Nach Artikel" : "Rest"}
+              </button>
+            ))}
+          </div>
+
+          {umfang === "kategorie" && offen && (
+            <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+              {offen.nach_kategorie.filter((k) => k.kategorie_id !== null).map((k) => (
+                <button key={k.kategorie_id} className={`chip ${kategorieIds.includes(k.kategorie_id!) ? "on" : ""}`} onClick={() => setKategorieIds((ids) => toggleId(ids, k.kategorie_id!))}>
+                  {k.name} · {formatCents(k.umsatz_cent)}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {umfang === "artikel" && offen && (
+            <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+              {offen.nach_artikel.map((a) => (
+                <button key={a.artikel_id} className={`chip ${artikelIds.includes(a.artikel_id) ? "on" : ""}`} onClick={() => setArtikelIds((ids) => toggleId(ids, a.artikel_id))}>
+                  {a.bezeichnung} · {a.menge}× · {formatCents(a.umsatz_cent)}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <p style={{ color: "var(--muted)", fontSize: 13, margin: "10px 0 0" }}>
+            Umfang: <strong>{x.umfang_beschreibung}</strong>
+            {x.davon_teiloffen > 0 && <> · {x.davon_teiloffen} Belege danach noch teiloffen</>}
+          </p>
 
           <div className="korb-summen" style={{ marginTop: 8 }}>
             <Zeile label="Waren" wert={x.waren_cent} />
@@ -132,31 +222,40 @@ export function Kassenabschluss({ profil }: { profil: Kassenprofil }) {
             </div>
           )}
 
-          <div className="feld-grid" style={{ marginTop: 16 }}>
-            <label>Anfangsbestand (Wechselgeld) €<input value={anfang} onChange={(e) => setAnfang(e.target.value)} inputMode="decimal" placeholder="z. B. 50,00" /></label>
-            <label>Gezählt (Kassensturz) €<input value={gezaehlt} onChange={(e) => setGezaehlt(e.target.value)} inputMode="decimal" placeholder="optional" /></label>
-          </div>
-          <div className="korb-summen" style={{ marginTop: 12 }}>
-            <Zeile label="Bar-Umsatz" wert={x.bar_cent} />
-            <Zeile label="Erwartet in Kasse" wert={erwartet} />
-            {differenz != null && (
-              <div className="row korb-gesamt" style={{ justifyContent: "space-between" }}>
-                <span>Differenz</span>
-                <span style={{ color: differenz === 0 ? "var(--ok, #2563eb)" : "var(--danger, #b3261e)" }}>
-                  {differenz > 0 ? "+" : ""}{formatCents(differenz)}
-                </span>
+          {kassensturzAktiv ? (
+            <>
+              <div className="feld-grid" style={{ marginTop: 16 }}>
+                <label>Anfangsbestand (Wechselgeld) €<input value={anfang} onChange={(e) => setAnfang(e.target.value)} inputMode="decimal" placeholder="z. B. 50,00" /></label>
+                <label>Gezählt (Kassensturz) €<input value={gezaehlt} onChange={(e) => setGezaehlt(e.target.value)} inputMode="decimal" placeholder="optional" /></label>
               </div>
-            )}
-          </div>
+              <div className="korb-summen" style={{ marginTop: 12 }}>
+                <Zeile label="Bar-Umsatz" wert={x.bar_cent} />
+                <Zeile label="Erwartet in Kasse" wert={erwartet} />
+                {differenz != null && (
+                  <div className="row korb-gesamt" style={{ justifyContent: "space-between" }}>
+                    <span>Differenz</span>
+                    <span style={{ color: differenz === 0 ? "var(--ok, #2563eb)" : "var(--danger, #b3261e)" }}>
+                      {differenz > 0 ? "+" : ""}{formatCents(differenz)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <p style={{ color: "var(--muted)", fontSize: 13, marginTop: 14 }}>
+              Produktgruppen-Abschlüsse enthalten nur Mengen und Umsätze. Der Bargeld-Kassensturz erfolgt beim Gesamt-/Rest-Abschluss.
+            </p>
+          )}
 
           {fehler && <p className="login-error" style={{ marginTop: 10 }}>{fehler}</p>}
 
           {!confirm ? (
             <div className="row" style={{ marginTop: 14 }}>
-              <button className="btn btn-primary" disabled={x.anzahl_verkaeufe === 0} onClick={() => setConfirm(true)}>
+              <button className="btn btn-primary" disabled={x.anzahl_verkaeufe === 0 || !scopeGueltig} onClick={() => setConfirm(true)}>
                 Z-Abschluss durchführen
               </button>
               {x.anzahl_verkaeufe === 0 && <span style={{ color: "var(--muted)", marginLeft: 10, alignSelf: "center" }}>Keine offenen Verkäufe.</span>}
+              {!scopeGueltig && <span style={{ color: "var(--muted)", marginLeft: 10, alignSelf: "center" }}>Bitte Umfang auswählen.</span>}
             </div>
           ) : (
             <div className="verkauf-ok" style={{ marginTop: 14 }}>
@@ -274,11 +373,12 @@ export function Kassenabschluss({ profil }: { profil: Kassenprofil }) {
 
       <div className="section-title" style={{ marginBottom: 8 }}>Bisherige Abschlüsse</div>
       <table className="tabelle">
-        <thead><tr><th>Nummer</th><th>Zeitpunkt</th><th className="num">Verkäufe</th><th className="num">Gesamt</th><th className="num">Differenz</th><th className="num">Aktionen</th></tr></thead>
+        <thead><tr><th>Nummer</th><th>Umfang</th><th>Zeitpunkt</th><th className="num">Verkäufe</th><th className="num">Gesamt</th><th className="num">Differenz</th><th className="num">Aktionen</th></tr></thead>
         <tbody>
           {liste.map((a) => (
             <tr key={a.id}>
               <td><strong>{a.nummer}</strong></td>
+              <td>{a.umfang_beschreibung}</td>
               <td>{zeit(a.erstellt_am)}</td>
               <td className="num">{a.anzahl_verkaeufe}</td>
               <td className="num">{formatCents(a.gesamt_cent)}</td>
@@ -292,14 +392,14 @@ export function Kassenabschluss({ profil }: { profil: Kassenprofil }) {
               </td>
             </tr>
           ))}
-          {liste.length === 0 && <tr><td colSpan={6} style={{ color: "var(--muted)" }}>Noch keine Abschlüsse.</td></tr>}
+          {liste.length === 0 && <tr><td colSpan={7} style={{ color: "var(--muted)" }}>Noch keine Abschlüsse.</td></tr>}
         </tbody>
       </table>
 
       {detail && (
         <div className="card" style={{ marginTop: 16 }}>
           <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
-            <div className="section-title">{detail.nummer} · {zeit(detail.bis)}</div>
+            <div className="section-title">{detail.nummer} · {detail.umfang_beschreibung} · {zeit(detail.bis)}</div>
             <div className="row" style={{ gap: 10 }}>
               {detail.abschluss_id && <button className="btn btn-sm" onClick={() => ladeCsv(detail.abschluss_id!)}>CSV herunterladen</button>}
               <button className="btn btn-sm" onClick={() => setDetail(null)}>Schließen</button>
