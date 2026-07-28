@@ -145,15 +145,24 @@ export interface BerichtZahlart { zahlungsmethode_id: number | null; bezeichnung
 export interface BerichtArtikel { bezeichnung: string; menge: number; betrag_cent: number; }
 export interface Bericht {
   typ: string; nummer: string | null; abschluss_id: number | null; kassenprofil_id: number;
+  umfang_typ: string; umfang_beschreibung: string;
   von: string | null; bis: string; anzahl_verkaeufe: number;
   waren_cent: number; pfand_cent: number; gesamt_cent: number; bar_cent: number;
   anfangsbestand_cent: number; erwartet_cent: number; gezaehlt_cent: number | null; differenz_cent: number | null;
-  zahlarten: BerichtZahlart[]; artikel: BerichtArtikel[];
+  zahlarten: BerichtZahlart[]; artikel: BerichtArtikel[]; betroffene_belege: number; davon_teiloffen: number;
 }
 export interface KassenabschlussKopf {
-  id: number; nummer: string; kassenprofil_id: number; erstellt_am: string;
+  id: number; nummer: string; kassenprofil_id: number; erstellt_am: string; umfang_typ: string; umfang_beschreibung: string;
   anzahl_verkaeufe: number; waren_cent: number; pfand_cent: number; gesamt_cent: number; bar_cent: number;
   gezaehlt_cent: number | null; differenz_cent: number | null;
+}
+export interface AbschlussOffenSumme { positionen: number; menge: number; umsatz_cent: number; }
+export interface AbschlussOffenKategorie { kategorie_id: number | null; name: string; menge: number; umsatz_cent: number; positionen: number; }
+export interface AbschlussOffenArtikel { artikel_id: number; bezeichnung: string; menge: number; umsatz_cent: number; positionen: number; }
+export interface AbschlussOffen {
+  offen_gesamt: AbschlussOffenSumme;
+  nach_kategorie: AbschlussOffenKategorie[];
+  nach_artikel: AbschlussOffenArtikel[];
 }
 
 type Body = Record<string, unknown>;
@@ -254,8 +263,15 @@ export const api = {
   druckAbbrechen: (id: number) => req<Druckauftrag>(`/druckwarteschlange/${id}/abbrechen`, { method: "POST" }),
 
   // Kassenabschluss (Phase 5)
-  xBericht: (pid: number, anfangsbestand_cent = 0, gezaehlt_cent?: number | null) =>
-    req<Bericht>(`/abschluss/x?kassenprofil_id=${pid}&anfangsbestand_cent=${anfangsbestand_cent}${gezaehlt_cent != null ? `&gezaehlt_cent=${gezaehlt_cent}` : ""}`),
+  abschlussOffen: (pid: number) => req<AbschlussOffen>(`/abschluss/offen?kassenprofil_id=${pid}`),
+  xBericht: (pid: number, anfangsbestand_cent = 0, gezaehlt_cent?: number | null, scope?: { umfang_typ?: string; kategorie_ids?: number[]; artikel_ids?: number[] }) => {
+    const query = new URLSearchParams({ kassenprofil_id: String(pid), anfangsbestand_cent: String(anfangsbestand_cent) });
+    if (gezaehlt_cent != null) query.set("gezaehlt_cent", String(gezaehlt_cent));
+    if (scope?.umfang_typ) query.set("umfang_typ", scope.umfang_typ);
+    if (scope?.kategorie_ids?.length) query.set("kategorie_ids", scope.kategorie_ids.join(","));
+    if (scope?.artikel_ids?.length) query.set("artikel_ids", scope.artikel_ids.join(","));
+    return req<Bericht>(`/abschluss/x?${query.toString()}`);
+  },
   zAbschluss: (b: Body) => req<Bericht>("/abschluss/z", { method: "POST", body: j(b) }),
   abschluesse: (pid: number) => req<KassenabschlussKopf[]>(`/abschluss?kassenprofil_id=${pid}`),
   abschlussArtikeldatenZuruecksetzen: (pid: number, bestaetigung: string, optionen: AbschlussResetOptions) =>

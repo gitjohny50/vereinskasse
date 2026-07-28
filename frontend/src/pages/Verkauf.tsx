@@ -8,6 +8,29 @@ import {
 type CheckoutStep = "pfand-frage" | "pfand-auswahl" | "zahlung" | "bar";
 
 const EURO_STUECKELUNG = [5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5, 2, 1];
+const BERECHNUNG_RETRY_DELAYS_MS = [120, 300];
+
+function warten(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function istRetrybarerBerechnungsfehler(e: unknown): boolean {
+  return !(e instanceof ApiError) || e.status === 429 || e.status >= 500;
+}
+
+async function berechnungMitRetry(payload: Parameters<typeof api.berechnung>[0]): Promise<Berechnung> {
+  let letzterFehler: unknown;
+  for (let versuch = 0; versuch <= BERECHNUNG_RETRY_DELAYS_MS.length; versuch += 1) {
+    try {
+      return await api.berechnung(payload);
+    } catch (e) {
+      letzterFehler = e;
+      if (!istRetrybarerBerechnungsfehler(e) || versuch >= BERECHNUNG_RETRY_DELAYS_MS.length) break;
+      await warten(BERECHNUNG_RETRY_DELAYS_MS[versuch]);
+    }
+  }
+  throw letzterFehler;
+}
 
 export function Verkauf({ profil }: { profil: Kassenprofil }) {
   const [kategorien, setKategorien] = useState<Kategorie[]>([]);
@@ -101,7 +124,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
     const seq = ++berechnungSeq.current;
     setBerechnungBusy(true);
     setBerechnungFehler(null);
-    const promise = api.berechnung(berechnungPayload).then((b) => {
+    const promise = berechnungMitRetry(berechnungPayload).then((b) => {
       if (seq === berechnungSeq.current) {
         berechnungKeyRef.current = berechnungKey;
         setBerech(b);
@@ -475,10 +498,6 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
               <div className="checkout-step cash-step" data-tour="verkauf-bar">
                 <div className="cash-step-title">
                   <h2>Barzahlung</h2>
-                  <div className={nochOffen > 0 ? "cash-status warn" : "cash-status ok"}>
-                    <span>{nochOffen > 0 ? "Noch offen" : "Rückgeld"}</span>
-                    <strong>{formatCents(nochOffen > 0 ? nochOffen : rueckgeldAnzeige)}</strong>
-                  </div>
                 </div>
 
                 <div className="cash-flow">
