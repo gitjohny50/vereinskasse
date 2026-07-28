@@ -567,6 +567,8 @@ class BerichtOut(BaseModel):
     nummer: str | None = None
     abschluss_id: int | None = None
     kassenprofil_id: int
+    umfang_typ: str = "alle"
+    umfang_beschreibung: str = "Alle offenen Positionen"
     von: datetime | None
     bis: datetime
     anzahl_verkaeufe: int
@@ -580,10 +582,15 @@ class BerichtOut(BaseModel):
     differenz_cent: int | None
     zahlarten: list[BerichtZahlartOut]
     artikel: list[BerichtArtikelOut]
+    betroffene_belege: int = 0
+    davon_teiloffen: int = 0
 
 
 class ZAbschlussIn(BaseModel):
     kassenprofil_id: int
+    umfang_typ: str = "alle"
+    kategorie_ids: list[int] = []
+    artikel_ids: list[int] = []
     anfangsbestand_cent: int = 0
     gezaehlt_cent: int | None = None
 
@@ -593,6 +600,8 @@ class KassenabschlussKopfOut(BaseModel):
     nummer: str
     kassenprofil_id: int
     erstellt_am: datetime
+    umfang_typ: str = "alle"
+    umfang_beschreibung: str = "Alle offenen Positionen"
     anzahl_verkaeufe: int
     waren_cent: int
     pfand_cent: int
@@ -600,6 +609,34 @@ class KassenabschlussKopfOut(BaseModel):
     bar_cent: int
     gezaehlt_cent: int | None
     differenz_cent: int | None
+
+
+class AbschlussOffenSummeOut(BaseModel):
+    positionen: int
+    menge: int
+    umsatz_cent: int
+
+
+class AbschlussOffenKategorieOut(BaseModel):
+    kategorie_id: int | None = None
+    name: str
+    menge: int
+    umsatz_cent: int
+    positionen: int
+
+
+class AbschlussOffenArtikelOut(BaseModel):
+    artikel_id: int
+    bezeichnung: str
+    menge: int
+    umsatz_cent: int
+    positionen: int
+
+
+class AbschlussOffenOut(BaseModel):
+    offen_gesamt: AbschlussOffenSummeOut
+    nach_kategorie: list[AbschlussOffenKategorieOut]
+    nach_artikel: list[AbschlussOffenArtikelOut]
 
 
 # ===================================================================
