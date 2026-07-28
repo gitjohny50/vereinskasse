@@ -8,11 +8,33 @@ HOSTNAME="${1:-kasse}"
 AP_SSID="${2:-Vereinskasse-${HOSTNAME}}"
 AP_PASSWORD="${3:-}"
 AP_ADDRESS="10.42.0.1"
+SERVICE_USER="${VK_SERVICE_USER:-kasse}"
+SERVICE_GROUP="$(id -gn "${SERVICE_USER}" 2>/dev/null || true)"
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Bitte mit sudo ausführen." >&2
   exit 1
 fi
+
+prepare_credentials_dir() {
+  install -d -m 0750 /etc/vereinskasse
+  if [[ -n "${SERVICE_GROUP}" ]]; then
+    chgrp "${SERVICE_GROUP}" /etc/vereinskasse
+  fi
+  chmod 0750 /etc/vereinskasse
+}
+
+secure_credentials_file() {
+  if [[ ! -f /etc/vereinskasse/local-ap.txt ]]; then
+    return
+  fi
+  if [[ -n "${SERVICE_GROUP}" ]]; then
+    chgrp "${SERVICE_GROUP}" /etc/vereinskasse/local-ap.txt
+    chmod 0640 /etc/vereinskasse/local-ap.txt
+  else
+    chmod 0600 /etc/vereinskasse/local-ap.txt
+  fi
+}
 
 apt-get update
 apt-get install -y avahi-daemon avahi-utils chrony network-manager curl
@@ -36,15 +58,16 @@ if command -v nmcli >/dev/null 2>&1; then
     nmcli connection add type wifi ifname wlan0 con-name vereinskasse-local-ap autoconnect no ssid "${AP_SSID}"
     nmcli connection modify vereinskasse-local-ap 802-11-wireless.mode ap 802-11-wireless.band bg 802-11-wireless.hidden yes ipv4.method shared ipv4.addresses "${AP_ADDRESS}/24" ipv6.method disabled
     nmcli connection modify vereinskasse-local-ap wifi-sec.key-mgmt wpa-psk wifi-sec.psk "${AP_PASSWORD}"
-    install -d -m 0750 /etc/vereinskasse
+    prepare_credentials_dir
     {
       echo "SSID=${AP_SSID}"
       echo "PASSWORT=${AP_PASSWORD}"
       echo "HIDDEN=1"
       echo "HINWEIS=Profil ist deaktiviert. Aktivieren mit: sudo nmcli connection up vereinskasse-local-ap"
     } > /etc/vereinskasse/local-ap.txt
-    chmod 0600 /etc/vereinskasse/local-ap.txt
   fi
+  prepare_credentials_dir
+  secure_credentials_file
   nmcli connection modify vereinskasse-local-ap 802-11-wireless.hidden yes connection.autoconnect no
 fi
 
