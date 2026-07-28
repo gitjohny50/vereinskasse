@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from . import models, print_queue
 from .timeutils import to_local
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
@@ -311,8 +311,8 @@ def erstelle_z(session: Session, kassenprofil_id: int, benutzer: models.Benutzer
     # Druck über die Warteschlange (best effort - der Abschluss ist gespeichert).
     try:
         druck_bericht(session, abschluss.id)
-    except Exception as exc:  # noqa: BLE001  # pragma: no cover
-        log.warning("Report printing failed: %s", exc)
+    except Exception as exc:  # pragma: no cover
+        logger.exception("Druck des Kassenabschlusses fehlgeschlagen (wird ignoriert)")
     session.refresh(abschluss)
     return abschluss
 
