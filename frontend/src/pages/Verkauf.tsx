@@ -288,10 +288,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
         gegeben_cent: methode.rueckgeld_berechnen && gegebenCent !== null ? gegebenCent : null,
       });
       setErfolg(v); setCheckoutOpen(false); setBerech(null); leeren();
-    } catch (e) {
-      // KORREKTUR: Die Fehlerbehandlung wurde an die von `berechnungLaden` angeglichen, um konsistente Meldungen zu gewährleisten.
-      setFehler(e instanceof ApiError ? e.message : "Verbindung zum Server verloren.");
-    }
+    } catch (e) { setFehler(e instanceof ApiError ? e.message : "Abschluss fehlgeschlagen."); }
     finally {
       abschlussLaeuft.current = false;
       setBusy(false);
@@ -620,8 +617,7 @@ function SwipeKorbZeile({ children, onRemove }: { children: ReactNode; onRemove:
   function up(e: PointerEvent<HTMLDivElement>) {
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
-      // eslint-disable-next-line no-empty
-    } catch (err) { /* Fehler hier ist nicht kritisch, Geste wird trotzdem beendet */ }
+    } catch (err) { /* Der Fehler beim Freigeben des Pointers ist hier nicht kritisch, die Geste wird trotzdem beendet. */ }
 
     if (offset < -62) {
       onRemove();
