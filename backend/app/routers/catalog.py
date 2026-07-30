@@ -26,6 +26,7 @@ from ..models import (
     Kategorie,
     Pfandart,
     Verkauf,
+    Verkaufsposition,
     Zahlungsmethode,
 )
 from ..schemas import (
@@ -196,13 +197,24 @@ def kategorie_loeschen(kid: int, session: Session = Depends(get_session)) -> Kat
     k = session.get(Kategorie, kid)
     if k is None:
         raise HTTPException(status_code=404, detail="Kategorie nicht gefunden")
+    
+    # KORREKT: Prüft jetzt explizit, ob es POSITIONEN dieser Kategorie gibt, 
+    # die noch keinen Z-Abschluss haben.
     offene = (
-        session.query(Verkauf.id)
-        .filter(Verkauf.kassenprofil_id == k.kassenprofil_id, Verkauf.abschluss_id.is_(None))
+        session.query(Verkaufsposition.id)
+        .join(Verkauf)
+        .join(Artikel)
+        .filter(
+            Verkauf.kassenprofil_id == k.kassenprofil_id,
+            Verkaufsposition.abschluss_id.is_(None),  # <--- HIER war der entscheidende Fehler!
+            Artikel.kategorie_id == k.id
+        )
         .first()
     )
+    
     if offene is not None:
         raise HTTPException(status_code=409, detail="Es gibt noch offene Verkäufe. Bitte zuerst den Z-Abschluss durchführen.")
+    
     artikel = session.query(Artikel).filter(Artikel.kategorie_id == k.id).all()
     vorher = f"{k.name}, {len(artikel)} Artikel"
     out = _kat_out(k)
@@ -215,7 +227,6 @@ def kategorie_loeschen(kid: int, session: Session = Depends(get_session)) -> Kat
     ))
     session.commit()
     return out
-
 
 # ===================================================================
 # Pfandarten (Lastenheft 10.3)
