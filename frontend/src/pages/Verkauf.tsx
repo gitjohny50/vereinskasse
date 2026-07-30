@@ -32,6 +32,20 @@ async function berechnungMitRetry(payload: Parameters<typeof api.berechnung>[0])
   throw letzterFehler;
 }
 
+async function abschlussMitRetry(payload: Parameters<typeof api.verkaufAbschluss>[0]): Promise<V> {
+  let letzterFehler: unknown;
+  for (let versuch = 0; versuch <= BERECHNUNG_RETRY_DELAYS_MS.length; versuch += 1) {
+    try {
+      return await api.verkaufAbschluss(payload);
+    } catch (e) {
+      letzterFehler = e;
+      if (!istRetrybarerBerechnungsfehler(e) || versuch >= BERECHNUNG_RETRY_DELAYS_MS.length) break;
+      await warten(BERECHNUNG_RETRY_DELAYS_MS[versuch]);
+    }
+  }
+  throw letzterFehler;
+}
+
 export function Verkauf({ profil }: { profil: Kassenprofil }) {
   const [kategorien, setKategorien] = useState<Kategorie[]>([]);
   const [artikel, setArtikel] = useState<Artikel[]>([]);
@@ -220,18 +234,23 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
   function artikelFarbe(a: Artikel) {
     return a.kategorie_id ? katById.get(a.kategorie_id)?.farbe || "var(--accent)" : "var(--accent)";
   }
+  
   function updateKorbScroll() {
     const el = korbListeRef.current;
     if (!el) return;
     const max = el.scrollHeight - el.clientHeight;
+    
     if (max <= 4) {
-      setKorbScroll({ show: false, top: 0, height: 100 });
+      setKorbScroll((s) => !s.show ? s : { show: false, top: 0, height: 100 });
       return;
     }
+    
     const height = Math.max(18, Math.min(96, (el.clientHeight / el.scrollHeight) * 100));
     const top = (el.scrollTop / max) * (100 - height);
-    setKorbScroll({ show: true, top, height });
+    
+    setKorbScroll((s) => (s.show && s.top === top && s.height === height) ? s : { show: true, top, height });
   }
+
   function sliderToScroll(e: PointerEvent<HTMLDivElement>) {
     const el = korbListeRef.current;
     if (!el) return;
@@ -262,7 +281,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
       if (!aktuelleBerechnung) { setFehler("Summe konnte nicht berechnet werden."); return; }
       if (aktuelleBerechnung.gesamt_cent === 0 && pfandItems.length === 0) { setFehler("Summe ist 0,00 €."); return; }
       if (methode.rueckgeld_berechnen && gegebenCent !== null && gegebenCent < aktuelleBerechnung.gesamt_cent) { setFehler("Gegebener Betrag ist zu gering."); return; }
-      const v = await api.verkaufAbschluss({
+      const v = await abschlussMitRetry({
         kassenprofil_id: profil.id, veranstaltung_id: null,
         artikel: artikelItems, pfand_rueckgaben: pfandItems,
         zahlungsmethode_id: methode.id,
@@ -595,9 +614,16 @@ function SwipeKorbZeile({ children, onRemove }: { children: ReactNode; onRemove:
     setOffset(Math.max(-96, Math.min(0, diff)));
   }
 
-  function up() {
-    if (offset < -62) onRemove();
-    setOffset(0);
+  function up(e: PointerEvent<HTMLDivElement>) {
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch (err) { /* Der Fehler beim Freigeben des Pointers ist hier nicht kritisch, die Geste wird trotzdem beendet. */ }
+
+    if (offset < -62) {
+      onRemove();
+    } else {
+      setOffset(0);
+    }
     startX.current = null;
   }
 
