@@ -617,7 +617,8 @@ function SwipeKorbZeile({ children, onRemove }: { children: ReactNode; onRemove:
   function up(e: PointerEvent<HTMLDivElement>) {
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch (err) {}
+      // eslint-disable-next-line no-empty
+    } catch (err) { /* Fehler hier ist nicht kritisch, Geste wird trotzdem beendet */ }
 
     if (offset < -62) {
       onRemove();
