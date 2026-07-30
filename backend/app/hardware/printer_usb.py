@@ -44,12 +44,12 @@ class UsbPrinter(PrinterAdapter):
         try:
             if dev.is_kernel_driver_active(0):
                 dev.detach_kernel_driver(0)
-        except (NotImplementedError, Exception):
+        except (NotImplementedError, Exception):  # noqa: BLE001
             log.debug("USB kernel driver detach skipped.", exc_info=True)
         # Konfiguration setzen; ist sie schon aktiv, ignorieren wir den Fehler.
         try:
             dev.set_configuration()
-        except Exception:
+        except Exception:  # noqa: BLE001
             log.debug("USB set_configuration skipped.", exc_info=True)
         return dev
 
@@ -74,7 +74,7 @@ class UsbPrinter(PrinterAdapter):
             if dev is not None:
                 try:
                     usb.util.dispose_resources(dev)
-                except Exception:
+                except Exception:  # noqa: BLE001
                     log.debug("USB dispose after send failed.", exc_info=True)
 
     def status(self) -> PrinterStatus:
@@ -89,5 +89,5 @@ class UsbPrinter(PrinterAdapter):
             if dev is not None:
                 try:
                     usb.util.dispose_resources(dev)
-                except Exception:
+                except Exception:  # noqa: BLE001
                     log.debug("USB dispose after status failed.", exc_info=True)

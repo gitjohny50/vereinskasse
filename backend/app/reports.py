@@ -311,7 +311,7 @@ def erstelle_z(session: Session, kassenprofil_id: int, benutzer: models.Benutzer
     # Druck über die Warteschlange (best effort - der Abschluss ist gespeichert).
     try:
         druck_bericht(session, abschluss.id)
-    except Exception as exc:  # pragma: no cover
+    except Exception:  # pragma: no cover
         logger.exception("Druck des Kassenabschlusses fehlgeschlagen (wird ignoriert)")
     session.refresh(abschluss)
     return abschluss

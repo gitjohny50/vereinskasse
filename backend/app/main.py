@@ -60,7 +60,7 @@ async def _druck_worker(stop: asyncio.Event) -> None:
                 with SessionLocal() as session:
                     print_queue.verarbeite_offene(session)
             await asyncio.to_thread(_lauf)
-        except Exception as exc:  # pragma: no cover - Worker darf nie sterben
+        except Exception:  # pragma: no cover - Worker darf nie sterben
             # Log the error but keep the worker alive (best effort)
             logger.exception("Druck-Worker: Fehler beim Verarbeiten offener Druckaufträge (wird ignoriert)")
 
@@ -183,7 +183,7 @@ async def _startup_receipt_task(stop: asyncio.Event) -> None:
                 hw_service.run_startup_receipt(session, info)
 
         await asyncio.to_thread(_druck)
-    except Exception as exc:  # pragma: no cover - Startbeleg darf Backend nie verhindern
+    except Exception:  # pragma: no cover - Startbeleg darf Backend nie verhindern
         logger.exception("Startbeleg: Fehler beim Drucken des Startbelegs (wird ignoriert)")
 
 
@@ -213,7 +213,7 @@ async def lifespan(_app: FastAPI):
             except asyncio.CancelledError:
                 # expected during shutdown, ignore
                 pass
-            except Exception as exc:
+            except Exception:
                 logger.exception("Fehler beim Warten auf Task während Shutdown")
 
 
