@@ -32,6 +32,8 @@ FEHLGESCHLAGEN = "fehlgeschlagen"
 ABGEBROCHEN = "abgebrochen"
 log = logging.getLogger(__name__)
 
+logger = logging.getLogger(__name__)
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -65,9 +67,9 @@ def _versuch(session: Session, auftrag: models.Druckauftrag, printer: PrinterAda
     try:
         result = printer.send(payload)
         ok, detail = result.ok, result.detail
-    except Exception as exc:  # noqa: BLE001 - Adapter, der nicht sauber abfängt
-        log.warning("Print adapter error: %s", exc)
+    except Exception as exc:  # Adapter, der nicht sauber abfängt
         ok, detail = False, f"Ausnahme: {exc}"
+        logger.exception("Druckadapter: Ausnahme beim Senden an den Drucker")
 
     auftrag.versuche += 1
     auftrag.drucker = printer.name
