@@ -8,6 +8,8 @@ HOSTNAME="${1:-kasse}"
 AP_SSID="${2:-Vereinskasse-${HOSTNAME}}"
 AP_PASSWORD="${3:-}"
 AP_ADDRESS="10.42.0.1"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_AP_SERVICE="${SCRIPT_DIR}/../vereinskasse-local-ap.service"
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Bitte mit sudo ausführen." >&2
@@ -24,8 +26,8 @@ timedatectl set-timezone Europe/Berlin
 timedatectl set-ntp true
 
 # Raspberry Pi OS nutzt je nach Image dhcpcd oder NetworkManager. Für den
-# optionalen lokalen iPad-Zugang legen wir nur ein deaktiviertes Profil an.
-# Es sendet also standardmäßig kein WLAN und erfüllt damit den Offline-Betrieb.
+# lokalen iPad-Zugang legt die Kasse ein sichtbares WLAN an und startet es
+# beim Boot über einen eigenen systemd-Dienst.
 systemctl enable --now NetworkManager || true
 
 if command -v nmcli >/dev/null 2>&1; then
@@ -33,16 +35,22 @@ if command -v nmcli >/dev/null 2>&1; then
     if [[ -z "${AP_PASSWORD}" ]]; then
       AP_PASSWORD="$(openssl rand -base64 18 | tr -dc 'A-Za-z0-9' | head -c 16)"
     fi
-    nmcli connection add type wifi ifname wlan0 con-name vereinskasse-local-ap autoconnect no ssid "${AP_SSID}"
+    nmcli connection add type wifi ifname wlan0 con-name vereinskasse-local-ap autoconnect yes ssid "${AP_SSID}"
     nmcli connection modify vereinskasse-local-ap 802-11-wireless.mode ap 802-11-wireless.band bg ipv4.method shared ipv4.addresses "${AP_ADDRESS}/24" ipv6.method disabled
     nmcli connection modify vereinskasse-local-ap wifi-sec.key-mgmt wpa-psk wifi-sec.psk "${AP_PASSWORD}"
     install -d -m 0750 /etc/vereinskasse
     {
       echo "SSID=${AP_SSID}"
       echo "PASSWORT=${AP_PASSWORD}"
-      echo "HINWEIS=Profil ist deaktiviert. Aktivieren mit: sudo nmcli connection up vereinskasse-local-ap"
+      echo "HINWEIS=Profil startet automatisch. Manuell aktivieren mit: sudo nmcli connection up vereinskasse-local-ap"
     } > /etc/vereinskasse/local-ap.txt
     chmod 0600 /etc/vereinskasse/local-ap.txt
+  fi
+  nmcli connection modify vereinskasse-local-ap connection.autoconnect yes 802-11-wireless.hidden no
+  if [[ -f "${LOCAL_AP_SERVICE}" ]]; then
+    install -m 0644 "${LOCAL_AP_SERVICE}" /etc/systemd/system/vereinskasse-local-ap.service
+    systemctl daemon-reload
+    systemctl enable --now vereinskasse-local-ap.service
   fi
 fi
 
