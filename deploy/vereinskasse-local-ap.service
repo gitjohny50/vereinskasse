@@ -1,0 +1,15 @@
+[Unit]
+Description=Vereinskasse lokales WLAN starten
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/nmcli connection up vereinskasse-local-ap
+ExecStop=/usr/bin/nmcli connection down vereinskasse-local-ap
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

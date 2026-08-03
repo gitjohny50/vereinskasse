@@ -342,6 +342,7 @@ class Verkaufsposition(Base):
     gesamt_cent: Mapped[int] = mapped_column(Integer, nullable=False)  # vorzeichenbehaftet
     artikelticket_modus: Mapped[str] = mapped_column(String(20), nullable=False, default="kein")
     steuersatz: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    abschluss_id: Mapped[int | None] = mapped_column(ForeignKey("kassenabschluss.id"), nullable=True)
 
     verkauf: Mapped[Verkauf] = relationship(back_populates="positionen")
 
@@ -388,6 +389,8 @@ class Kassenabschluss(Base):
     erwartet_cent: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     gezaehlt_cent: Mapped[int | None] = mapped_column(Integer, nullable=True)
     differenz_cent: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    umfang_typ: Mapped[str] = mapped_column(String(20), nullable=False, default="alle")
+    umfang_beschreibung: Mapped[str] = mapped_column(String(200), nullable=False, default="Alle offenen Positionen")
 
     zahlarten: Mapped[list["KassenabschlussZahlart"]] = relationship(
         back_populates="abschluss", cascade="all, delete-orphan", order_by="KassenabschlussZahlart.id"

@@ -50,9 +50,9 @@ npm run dev        # http://localhost:5173  (leitet /api an :8000)
 cd backend && python -m pytest -q
 ```
 
-Für den Betrieb auf dem Pi (ein Origin, Autostart): `frontend/` bauen
-(`npm run build`) — das Backend liefert dann `frontend/dist` unter `/` aus.
-Vollständige Anleitung: `deploy/INSTALL.md`.
+Für den Betrieb auf dem Pi: `frontend/` bauen (`npm run build`) und Nginx als
+lokalen HTTPS-Proxy aktivieren. Das Backend läuft dabei nur intern auf
+`127.0.0.1:8000`. Vollständige Anleitung: `deploy/INSTALL.md`.
 
 ## Projektstruktur
 
@@ -60,7 +60,7 @@ Vollständige Anleitung: `deploy/INSTALL.md`.
 vereinskasse/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py           FastAPI-App, Lifespan, statisches Frontend
+│   │   ├── main.py           FastAPI-App, Lifespan, optional statisches Frontend
 │   │   ├── config.py         Einstellungen (Umgebungsvariablen, keine Secrets)
 │   │   ├── database.py       SQLite-Engine, WAL/FK, Integritätsprüfung
 │   │   ├── models.py         Phase-1-Datenmodell

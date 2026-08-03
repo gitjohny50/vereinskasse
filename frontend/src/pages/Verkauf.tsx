@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import {
   api, ApiError, euroToCents, formatCents,
   type Artikel, type Berechnung, type Kassenprofil, type Kategorie, type Pfandart,
@@ -8,6 +8,43 @@ import {
 type CheckoutStep = "pfand-frage" | "pfand-auswahl" | "zahlung" | "bar";
 
 const EURO_STUECKELUNG = [5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5, 2, 1];
+const BERECHNUNG_RETRY_DELAYS_MS = [120, 300];
+
+function warten(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function istRetrybarerBerechnungsfehler(e: unknown): boolean {
+  return !(e instanceof ApiError) || e.status === 429 || e.status >= 500;
+}
+
+async function berechnungMitRetry(payload: Parameters<typeof api.berechnung>[0]): Promise<Berechnung> {
+  let letzterFehler: unknown;
+  for (let versuch = 0; versuch <= BERECHNUNG_RETRY_DELAYS_MS.length; versuch += 1) {
+    try {
+      return await api.berechnung(payload);
+    } catch (e) {
+      letzterFehler = e;
+      if (!istRetrybarerBerechnungsfehler(e) || versuch >= BERECHNUNG_RETRY_DELAYS_MS.length) break;
+      await warten(BERECHNUNG_RETRY_DELAYS_MS[versuch]);
+    }
+  }
+  throw letzterFehler;
+}
+
+async function abschlussMitRetry(payload: Parameters<typeof api.verkaufAbschluss>[0]): Promise<V> {
+  let letzterFehler: unknown;
+  for (let versuch = 0; versuch <= BERECHNUNG_RETRY_DELAYS_MS.length; versuch += 1) {
+    try {
+      return await api.verkaufAbschluss(payload);
+    } catch (e) {
+      letzterFehler = e;
+      if (!istRetrybarerBerechnungsfehler(e) || versuch >= BERECHNUNG_RETRY_DELAYS_MS.length) break;
+      await warten(BERECHNUNG_RETRY_DELAYS_MS[versuch]);
+    }
+  }
+  throw letzterFehler;
+}
 
 export function Verkauf({ profil }: { profil: Kassenprofil }) {
   const [kategorien, setKategorien] = useState<Kategorie[]>([]);
@@ -19,10 +56,13 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
   const [warenkorb, setWarenkorb] = useState<Record<number, number>>({});
   const [pfandRueck, setPfandRueck] = useState<Record<number, number>>({});
   const [berech, setBerech] = useState<Berechnung | null>(null);
+  const [berechnungBusy, setBerechnungBusy] = useState(false);
+  const [berechnungFehler, setBerechnungFehler] = useState<string | null>(null);
 
   const [zahlId, setZahlId] = useState<number | null>(null);
   const [gegeben, setGegeben] = useState("");
   const [busy, setBusy] = useState(false);
+  const [belegDruckBusy, setBelegDruckBusy] = useState(false);
   const [fehler, setFehler] = useState<string | null>(null);
   const [erfolg, setErfolg] = useState<V | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -30,12 +70,16 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
   const [korbScroll, setKorbScroll] = useState({ show: false, top: 0, height: 100 });
   const korbListeRef = useRef<HTMLDivElement | null>(null);
   const sliderDrag = useRef(false);
+  const abschlussLaeuft = useRef(false);
+  const berechnungSeq = useRef(0);
+  const berechnungKeyRef = useRef<string | null>(null);
+  const berechnungPromise = useRef<{ key: string; promise: Promise<Berechnung | null> } | null>(null);
 
   const artById = useMemo(() => new Map(artikel.map((a) => [a.id, a])), [artikel]);
   const katById = useMemo(() => new Map(kategorien.map((k) => [k.id, k])), [kategorien]);
 
   useEffect(() => {
-    setFehler(null); setWarenkorb({}); setPfandRueck({}); setBerech(null); setErfolg(null);
+    setFehler(null); setWarenkorb({}); setPfandRueck({}); setBerech(null); setBerechnungFehler(null); setErfolg(null);
     Promise.all([
       api.kategorien(profil.id), api.artikel(profil.id), api.pfandarten(profil.id),
       api.zahlungsmethoden(profil.id),
@@ -60,30 +104,72 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
     [pfandRueck, profil.pfand_aktiv],
   );
 
-  useEffect(() => {
-    if (artikelItems.length === 0 && pfandItems.length === 0) { setBerech(null); return; }
-    let aktiv = true;
-    api.berechnung({
-      kassenprofil_id: profil.id, veranstaltung_id: null,
-      artikel: artikelItems, pfand_rueckgaben: pfandItems,
-    }).then((b) => { if (aktiv) setBerech(b); }).catch(() => { /* Anzeige bleibt */ });
-    return () => { aktiv = false; };
-  }, [artikelItems, pfandItems, profil.id]);
-
   const sichtbar = katFilter === "alle" ? artikel : artikel.filter((a) => a.kategorie_id === katFilter);
   const zahlart = zahlarten.find((z) => z.id === zahlId) ?? null;
   const pfandAktiv = profil.pfand_aktiv !== false;
+  const hatPositionen = artikelItems.length > 0 || pfandItems.length > 0;
+  const berechnungPayload = useMemo(() => ({
+    kassenprofil_id: profil.id, veranstaltung_id: null,
+    artikel: artikelItems, pfand_rueckgaben: pfandItems,
+  }), [artikelItems, pfandItems, profil.id]);
+  const berechnungKey = useMemo(() => JSON.stringify(berechnungPayload), [berechnungPayload]);
+  const berechnungAktuell = berech !== null && berechnungKeyRef.current === berechnungKey;
   const gesamt = berech?.gesamt_cent ?? 0;
   const gegebenCent = euroToCents(gegeben);
-  const rueckgeld = zahlart?.rueckgeld_berechnen && gegebenCent !== null && gegebenCent >= gesamt ? gegebenCent - gesamt : null;
-  const rueckgeldStueckelung = useMemo(() => berechneStueckelung(rueckgeld ?? 0), [rueckgeld]);
-  const kannKassieren = !busy && (gesamt !== 0 || pfandItems.length > 0);
+  const kannKassieren = !busy && hatPositionen;
+  const sichtbarerBerechnungFehler = berechnungFehler && !berechnungBusy && !berechnungAktuell ? berechnungFehler : null;
   const offenePositionen = artikelItems.reduce((sum, i) => sum + i.menge, 0) + pfandItems.reduce((sum, i) => sum + i.menge, 0);
   const cashPresets = useMemo(() => {
     const basis = [500, 1000, 2000, 5000];
-    const gerundet = [500, 1000, 2000, 5000].find((v) => v >= gesamt);
-    return Array.from(new Set([gesamt, gerundet, ...basis].filter((v): v is number => typeof v === "number" && v > 0))).sort((a, b) => a - b);
+    const naechsterSchein = [500, 1000, 2000, 5000, 10000].find((v) => v >= gesamt);
+    const naechsterZehner = Math.ceil(gesamt / 1000) * 1000;
+    return Array.from(new Set([gesamt, naechsterZehner, naechsterSchein, ...basis].filter((v): v is number => typeof v === "number" && v >= gesamt && v > 0))).sort((a, b) => a - b);
   }, [gesamt]);
+  const gegebenAnzeige = gegebenCent === null ? gesamt : gegebenCent;
+  const rueckgeldAnzeige = zahlart?.rueckgeld_berechnen && gegebenAnzeige >= gesamt ? gegebenAnzeige - gesamt : 0;
+  const rueckgeldAnzeigeStueckelung = useMemo(() => berechneStueckelung(rueckgeldAnzeige), [rueckgeldAnzeige]);
+  const nochOffen = gegebenCent !== null && gegebenCent < gesamt ? gesamt - gegebenCent : 0;
+
+  const berechnungLaden = useCallback(async (): Promise<Berechnung | null> => {
+    if (!hatPositionen) return null;
+    if (berechnungAktuell) return berech;
+    if (berechnungPromise.current?.key === berechnungKey) return berechnungPromise.current.promise;
+
+    const seq = ++berechnungSeq.current;
+    setBerechnungBusy(true);
+    setBerechnungFehler(null);
+    const promise = berechnungMitRetry(berechnungPayload).then((b) => {
+      if (seq === berechnungSeq.current) {
+        berechnungKeyRef.current = berechnungKey;
+        setBerech(b);
+      }
+      return b;
+    }).catch((e) => {
+      const meldung = e instanceof ApiError ? e.message : "Berechnung fehlgeschlagen.";
+      if (seq === berechnungSeq.current) {
+        setBerechnungFehler(meldung);
+      }
+      return null;
+    }).finally(() => {
+      if (seq === berechnungSeq.current) setBerechnungBusy(false);
+      if (berechnungPromise.current?.key === berechnungKey) berechnungPromise.current = null;
+    });
+    berechnungPromise.current = { key: berechnungKey, promise };
+    return promise;
+  }, [berech, berechnungAktuell, berechnungKey, berechnungPayload, hatPositionen]);
+
+  useEffect(() => {
+    if (!hatPositionen) {
+      berechnungSeq.current += 1;
+      berechnungKeyRef.current = null;
+      berechnungPromise.current = null;
+      setBerech(null);
+      setBerechnungBusy(false);
+      setBerechnungFehler(null);
+      return;
+    }
+    void berechnungLaden();
+  }, [berechnungKey, berechnungLaden, hatPositionen]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(updateKorbScroll);
@@ -94,22 +180,51 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
     };
   }, [warenkorb, pfandRueck, berech]);
 
-  function plus(id: number) { setWarenkorb((w) => ({ ...w, [id]: (w[id] ?? 0) + 1 })); }
+  function warenkorbGeaendert() {
+    setFehler(null);
+    setBerechnungFehler(null);
+    setGegeben("");
+  }
+  function plus(id: number) {
+    warenkorbGeaendert();
+    setWarenkorb((w) => ({ ...w, [id]: (w[id] ?? 0) + 1 }));
+  }
   function setMenge(id: number, n: number) {
+    warenkorbGeaendert();
     setWarenkorb((w) => { const c = { ...w }; if (n <= 0) delete c[id]; else c[id] = n; return c; });
   }
   function setRueck(id: number, n: number) {
+    warenkorbGeaendert();
     setPfandRueck((p) => { const c = { ...p }; if (n <= 0) delete c[id]; else c[id] = n; return c; });
   }
-  function leeren() { setWarenkorb({}); setPfandRueck({}); setGegeben(""); setFehler(null); }
+  function leeren() {
+    setWarenkorb({});
+    setPfandRueck({});
+    setGegeben("");
+    setFehler(null);
+    setBerechnungFehler(null);
+  }
   function checkoutSchliessen() {
     setCheckoutOpen(false);
     setFehler(null);
   }
-  function checkoutStarten() {
+  async function checkoutStarten() {
+    if (!hatPositionen) return;
+    const aktuelleBerechnung = await berechnungLaden();
+    if (!aktuelleBerechnung) { setFehler("Summe konnte nicht berechnet werden."); return; }
+    if (aktuelleBerechnung.gesamt_cent === 0 && pfandItems.length === 0) { setFehler("Summe ist 0,00 €."); return; }
     setFehler(null);
-    setCheckoutStep(pfandAktiv && pfandarten.length > 0 ? "pfand-frage" : "zahlung");
     setCheckoutOpen(true);
+    if (pfandAktiv && pfandarten.length > 0) setCheckoutStep("pfand-frage");
+    else weiterZurZahlung();
+  }
+  function weiterZurZahlung() {
+    setFehler(null);
+    if (zahlarten.length === 1) {
+      zahlungWaehlen(zahlarten[0]);
+      return;
+    }
+    setCheckoutStep("zahlung");
   }
   function setBargeld(cents: number) { setGegeben((cents / 100).toFixed(2).replace(".", ",")); }
   function addBargeld(cents: number) {
@@ -119,18 +234,23 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
   function artikelFarbe(a: Artikel) {
     return a.kategorie_id ? katById.get(a.kategorie_id)?.farbe || "var(--accent)" : "var(--accent)";
   }
+  
   function updateKorbScroll() {
     const el = korbListeRef.current;
     if (!el) return;
     const max = el.scrollHeight - el.clientHeight;
+    
     if (max <= 4) {
-      setKorbScroll({ show: false, top: 0, height: 100 });
+      setKorbScroll((s) => !s.show ? s : { show: false, top: 0, height: 100 });
       return;
     }
+    
     const height = Math.max(18, Math.min(96, (el.clientHeight / el.scrollHeight) * 100));
     const top = (el.scrollTop / max) * (100 - height);
-    setKorbScroll({ show: true, top, height });
+    
+    setKorbScroll((s) => (s.show && s.top === top && s.height === height) ? s : { show: true, top, height });
   }
+
   function sliderToScroll(e: PointerEvent<HTMLDivElement>) {
     const el = korbListeRef.current;
     if (!el) return;
@@ -152,11 +272,16 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
   }
 
   async function abschliessen(methode: Zahlungsmethode | null = zahlart) {
+    if (abschlussLaeuft.current) return;
     if (!methode) { setFehler("Zahlungsart wählen."); return; }
-    if (methode.rueckgeld_berechnen && gegebenCent !== null && gegebenCent < gesamt) { setFehler("Gegebener Betrag ist zu gering."); return; }
+    abschlussLaeuft.current = true;
     setBusy(true); setFehler(null);
     try {
-      const v = await api.verkaufAbschluss({
+      const aktuelleBerechnung = await berechnungLaden();
+      if (!aktuelleBerechnung) { setFehler("Summe konnte nicht berechnet werden."); return; }
+      if (aktuelleBerechnung.gesamt_cent === 0 && pfandItems.length === 0) { setFehler("Summe ist 0,00 €."); return; }
+      if (methode.rueckgeld_berechnen && gegebenCent !== null && gegebenCent < aktuelleBerechnung.gesamt_cent) { setFehler("Gegebener Betrag ist zu gering."); return; }
+      const v = await abschlussMitRetry({
         kassenprofil_id: profil.id, veranstaltung_id: null,
         artikel: artikelItems, pfand_rueckgaben: pfandItems,
         zahlungsmethode_id: methode.id,
@@ -164,14 +289,29 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
       });
       setErfolg(v); setCheckoutOpen(false); setBerech(null); leeren();
     } catch (e) { setFehler(e instanceof ApiError ? e.message : "Abschluss fehlgeschlagen."); }
-    finally { setBusy(false); }
+    finally {
+      abschlussLaeuft.current = false;
+      setBusy(false);
+    }
   }
 
   function zahlungWaehlen(z: Zahlungsmethode) {
     setZahlId(z.id);
     setFehler(null);
     if (z.rueckgeld_berechnen) setCheckoutStep("bar");
-    else abschliessen(z);
+    else void abschliessen(z);
+  }
+  async function belegDrucken() {
+    if (!erfolg || belegDruckBusy) return;
+    setBelegDruckBusy(true);
+    setFehler(null);
+    try {
+      await api.belegDrucken(erfolg.id);
+    } catch (e) {
+      setFehler(e instanceof ApiError ? e.message : "Belegdruck fehlgeschlagen.");
+    } finally {
+      setBelegDruckBusy(false);
+    }
   }
 
   if (fehler && artikel.length === 0) return <p className="login-error">{fehler}</p>;
@@ -270,11 +410,12 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
           </div>
 
           {fehler && <p className="login-error">{fehler}</p>}
+          {!fehler && sichtbarerBerechnungFehler && <p className="login-error">{sichtbarerBerechnungFehler}</p>}
 
           <div className="checkout-actions">
             <button className="btn" data-tour="verkauf-leeren" onClick={leeren} disabled={busy}>Leeren</button>
             <button className="btn btn-primary kassieren-btn" data-tour="verkauf-kassieren" disabled={!kannKassieren} onClick={checkoutStarten}>
-              Kassieren <span>{formatCents(gesamt)}</span>
+              {berechnungBusy ? "Berechne…" : "Kassieren"} <span>{formatCents(gesamt)}</span>
             </button>
           </div>
         </div>
@@ -285,7 +426,9 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
             {erfolg.zahlung && erfolg.zahlung.rueckgeld_cent > 0 && (
               <div className="rueckgeld-gross">Rückgeld {formatCents(erfolg.zahlung.rueckgeld_cent)}</div>
             )}
-            <button className="btn btn-sm" onClick={() => api.belegDrucken(erfolg.id)}>Beleg drucken</button>
+            <button className="btn btn-sm" disabled={belegDruckBusy} onClick={belegDrucken}>
+              {belegDruckBusy ? "Drucke…" : "Beleg drucken"}
+            </button>
           </div>
         )}
       </aside>
@@ -296,7 +439,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
             <div className="checkout-modal-head">
               <div>
                 <div className="eyebrow">Kassieren</div>
-                <strong>{formatCents(gesamt)}</strong>
+                <strong>{berechnungBusy ? "…" : formatCents(gesamt)}</strong>
               </div>
               <button type="button" className="btn btn-sm" onClick={checkoutSchliessen}>Schließen</button>
             </div>
@@ -309,7 +452,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
                   <button type="button" className="checkout-choice" onClick={() => setCheckoutStep("pfand-auswahl")}>
                     <span>Ja</span><small>Pfand auswählen</small>
                   </button>
-                  <button type="button" className="checkout-choice primary-choice" onClick={() => { setPfandRueck({}); setCheckoutStep("zahlung"); }}>
+                  <button type="button" className="checkout-choice primary-choice" onClick={() => { setPfandRueck({}); weiterZurZahlung(); }}>
                     <span>Nein</span><small>Weiter zur Zahlung</small>
                   </button>
                 </div>
@@ -348,7 +491,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
                 )}
                 <div className="checkout-footer-actions">
                   <button type="button" className="btn" onClick={() => setCheckoutStep("pfand-frage")}>Zurück</button>
-                  <button type="button" className="btn btn-primary" onClick={() => setCheckoutStep("zahlung")}>Weiter zur Zahlung</button>
+                  <button type="button" className="btn btn-primary" onClick={weiterZurZahlung}>Weiter zur Zahlung</button>
                 </div>
               </div>
             )}
@@ -358,7 +501,7 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
                 <h2>Zahlungsart wählen</h2>
                 <div className="payment-big-grid">
                   {zahlarten.map((z) => (
-                    <button type="button" key={z.id} className="payment-big" disabled={busy} onClick={() => zahlungWaehlen(z)}>
+                    <button type="button" key={z.id} className="payment-big" disabled={busy || !kannKassieren} onClick={() => zahlungWaehlen(z)}>
                       <span>{z.name}</span>
                       <small>{z.rueckgeld_berechnen ? "Bargeld mit Rückgeld" : "Direkt kassieren"}</small>
                     </button>
@@ -371,33 +514,50 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
             )}
 
             {checkoutStep === "bar" && (
-              <div className="checkout-step center-step" data-tour="verkauf-bar">
-                <h2>Wie viel Bargeld wurde gegeben?</h2>
-                <div className="cash-total-display">
-                  <span>Zu zahlen</span><strong>{formatCents(gesamt)}</strong>
-                  <span>Gegeben</span><strong>{gegebenCent == null ? "–" : formatCents(gegebenCent)}</strong>
+              <div className="checkout-step cash-step" data-tour="verkauf-bar">
+                <div className="cash-step-title">
+                  <h2>Barzahlung</h2>
                 </div>
-                <div className="cash-presets modal-cash">
-                  <button type="button" className="chip chip-strong" onClick={() => setBargeld(gesamt)}>Passend</button>
-                  {cashPresets.map((c) => (
-                    <button type="button" key={c} className="chip" onClick={() => setBargeld(c)}>{formatCents(c)}</button>
-                  ))}
-                </div>
-                <div className="cash-adjust modal-cash-adjust">
-                  {[100, 200, 500, 1000].map((c) => (
-                    <button type="button" key={c} className="chip" onClick={() => addBargeld(c)}>+{formatCents(c)}</button>
-                  ))}
-                  <button type="button" className="chip" onClick={() => setGegeben("")}>C</button>
-                </div>
-                <label className="cash-manual">Manuell eingeben (€)
-                  <input value={gegeben} onChange={(e) => setGegeben(e.target.value)} inputMode="decimal" placeholder="z. B. 20,00" />
-                </label>
-                {rueckgeld !== null && (
-                  <div className="rueckgeld-panel">
-                    <div className="rueckgeld rueckgeld-modal">Rückgeld: <strong>{formatCents(rueckgeld)}</strong></div>
-                    {rueckgeld > 0 ? (
+
+                <div className="cash-flow">
+                  <section className="cash-entry-panel">
+                    <div className="cash-total-display">
+                      <span>Zu zahlen</span><strong>{formatCents(gesamt)}</strong>
+                      <span>Gegeben</span><strong>{formatCents(gegebenAnzeige)}</strong>
+                    </div>
+
+                    <div className="cash-section-label">Schnellwahl</div>
+                    <div className="cash-presets modal-cash">
+                      <button type="button" className="cash-choice exact" onClick={() => setBargeld(gesamt)}>
+                        <span>Passend</span>
+                        <strong>{formatCents(gesamt)}</strong>
+                      </button>
+                      {cashPresets.filter((c) => c !== gesamt).map((c) => (
+                        <button type="button" key={c} className="cash-choice" onClick={() => setBargeld(c)}>{formatCents(c)}</button>
+                      ))}
+                    </div>
+
+                    <div className="cash-section-label">Aufschlag</div>
+                    <div className="cash-adjust modal-cash-adjust">
+                      {[100, 200, 500, 1000].map((c) => (
+                        <button type="button" key={c} className="chip" onClick={() => addBargeld(c)}>+{formatCents(c)}</button>
+                      ))}
+                      <button type="button" className="chip" onClick={() => setGegeben("")}>C</button>
+                    </div>
+
+                    <label className="cash-manual">Manuell eingeben (€)
+                      <input value={gegeben} onChange={(e) => setGegeben(e.target.value)} inputMode="decimal" placeholder="z. B. 30,00" />
+                    </label>
+                  </section>
+
+                  <section className="cash-change-panel">
+                    <span>{nochOffen > 0 ? "Noch offen" : "Rückgeld"}</span>
+                    <strong>{formatCents(nochOffen > 0 ? nochOffen : rueckgeldAnzeige)}</strong>
+                    {nochOffen > 0 ? (
+                      <div className="cash-change-note">Gegebener Betrag ist zu gering.</div>
+                    ) : rueckgeldAnzeige > 0 ? (
                       <div className="stueckelung-grid" aria-label="Empfohlene Rückgeld-Stückelung">
-                        {rueckgeldStueckelung.map((s) => (
+                        {rueckgeldAnzeigeStueckelung.map((s) => (
                           <div key={s.wert} className={s.wert >= 500 ? "stueckelung-chip schein" : "stueckelung-chip muenze"}>
                             <span>{s.anzahl}×</span>
                             <strong>{formatCents(s.wert)}</strong>
@@ -405,16 +565,16 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
                         ))}
                       </div>
                     ) : (
-                      <div className="stueckelung-passend">Passend gegeben, kein Rückgeld.</div>
+                      <div className="stueckelung-passend">Passend gegeben.</div>
                     )}
-                  </div>
-                )}
-                {gegebenCent === null && <p className="cash-hint">Ohne Eingabe wird passend kassiert.</p>}
+                  </section>
+                </div>
                 {fehler && <p className="login-error">{fehler}</p>}
-                <div className="checkout-footer-actions">
+                {!fehler && sichtbarerBerechnungFehler && <p className="login-error">{sichtbarerBerechnungFehler}</p>}
+                <div className="checkout-footer-actions cash-footer-actions">
                   <button type="button" className="btn" disabled={busy} onClick={() => setCheckoutStep("zahlung")}>Zurück</button>
-                  <button type="button" className="btn btn-primary kassieren-btn" disabled={busy} onClick={() => abschliessen()}>
-                    Kassieren <span>{formatCents(gesamt)}</span>
+                  <button type="button" className="btn btn-primary kassieren-btn" disabled={busy || !kannKassieren} onClick={() => abschliessen()}>
+                    {berechnungBusy ? "Berechne…" : "Kassieren"} <span>{formatCents(gesamt)}</span>
                   </button>
                 </div>
               </div>
@@ -454,9 +614,16 @@ function SwipeKorbZeile({ children, onRemove }: { children: ReactNode; onRemove:
     setOffset(Math.max(-96, Math.min(0, diff)));
   }
 
-  function up() {
-    if (offset < -62) onRemove();
-    setOffset(0);
+  function up(e: PointerEvent<HTMLDivElement>) {
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch (err) { /* Der Fehler beim Freigeben des Pointers ist hier nicht kritisch, die Geste wird trotzdem beendet. */ }
+
+    if (offset < -62) {
+      onRemove();
+    } else {
+      setOffset(0);
+    }
     startX.current = null;
   }
 

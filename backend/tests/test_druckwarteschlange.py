@@ -49,6 +49,8 @@ def test_verkauf_druckt_tickets_ohne_beleg(client):
     assert len(tickets) == 1 and tickets[0]["bezeichnung"] == "Cola"
     assert "Bon" not in typen
     assert "Schublade" in typen
+    schublade_job = next(j for j in jobs if j["dokumenttyp"] == "Schublade")
+    assert schublade_job["id"] < tickets[0]["id"]
     st = client.get("/api/druckwarteschlange/status").json()
     assert st["offen"] == 0
 
@@ -77,15 +79,37 @@ def test_jedes_stueck_eigenes_ticket(client):
 
 
 def test_beleg_auf_knopfdruck(client):
-    """Beleg lässt sich für einen Verkauf gezielt anfordern (dokumenttyp 'Beleg')."""
+    """Beleg lässt sich gezielt einmal als Kundenbeleg anfordern."""
     pid, arts, zm = _kasse(client)
     v = client.post("/api/verkauf", json={
         "kassenprofil_id": pid, "artikel": [{"artikel_id": arts["Pommes"]["id"], "menge": 1}],
         "zahlungsmethode_id": zm["Bar"]["id"], "gegeben_cent": 500}).json()
     r = client.post(f"/api/verkauf/{v['id']}/beleg")
     assert r.status_code == 200 and r.json()["ok"] is True
-    typen = {j["dokumenttyp"] for j in client.get("/api/druckwarteschlange").json()}
-    assert "Beleg" in typen
+    belege = [j for j in client.get("/api/druckwarteschlange").json() if j["dokumenttyp"] == "Beleg"]
+    assert len(belege) == 1
+    assert belege[0]["bezeichnung"] == f"Beleg {v['belegnummer']}"
+
+
+def test_beleg_auf_knopfdruck_wartet_nicht_auf_synchronen_druck(client, monkeypatch):
+    def synchroner_druck_waere_falsch(*_args, **_kwargs):
+        raise AssertionError("Beleg-Endpunkt darf nicht synchron drucken")
+
+    monkeypatch.setattr("app.print_queue._versuch", synchroner_druck_waere_falsch)
+    monkeypatch.setattr("app.routers.sales._druck_nach_verkauf", lambda: None)
+    pid, arts, zm = _kasse(client)
+    v = client.post("/api/verkauf", json={
+        "kassenprofil_id": pid, "artikel": [{"artikel_id": arts["Pommes"]["id"], "menge": 1}],
+        "zahlungsmethode_id": zm["Bar"]["id"], "gegeben_cent": 500}).json()
+
+    r = client.post(f"/api/verkauf/{v['id']}/beleg")
+
+    assert r.status_code == 200
+    assert r.json()["detail"] == "Druckauftrag eingereiht."
+    with SessionLocal() as s:
+        for job in s.query(print_queue.models.Druckauftrag).filter_by(verkauf_id=v["id"]).all():
+            job.status = print_queue.ERFOLGREICH
+        s.commit()
 
 
 def test_wiederholung_bis_max_dann_fehlgeschlagen():

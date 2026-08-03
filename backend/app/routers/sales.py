@@ -6,15 +6,15 @@ Nachdruck.
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import sales
-from .. import print_queue
+from .. import print_queue, sales
 from ..auth import require_bediener
 from ..database import SessionLocal, get_session
 from ..models import Benutzer, Verkauf
-from ..timeutils import as_utc
 from ..schemas import (
     ActionResult,
     BerechnungIn,
@@ -24,8 +24,10 @@ from ..schemas import (
     VerkaufOut,
     ZahlungOut,
 )
+from ..timeutils import as_utc
 
 router = APIRouter(prefix="/api/verkauf", tags=["verkauf"], dependencies=[Depends(require_bediener)])
+log = logging.getLogger(__name__)
 
 
 @router.post("/berechnung", response_model=BerechnungOut)
@@ -41,8 +43,11 @@ def berechnung(payload: BerechnungIn, session: Session = Depends(get_session)) -
 
 
 def _druck_nach_verkauf() -> None:
-    with SessionLocal() as session:
-        print_queue.verarbeite_offene(session)
+    try:
+        with SessionLocal() as session:
+            print_queue.verarbeite_offene(session)
+    except Exception as exc:  # noqa: BLE001 - Druck darf den Verkauf nicht nachtraeglich kippen.
+        log.warning("Sales print processing failed after sale commit: %s", exc)
 
 
 @router.post("", response_model=VerkaufOut, status_code=201)
@@ -79,14 +84,16 @@ def detail(verkauf_id: int, session: Session = Depends(get_session)) -> VerkaufO
 
 
 @router.post("/{verkauf_id}/beleg", response_model=ActionResult)
-def beleg_drucken(verkauf_id: int, session: Session = Depends(get_session),
+def beleg_drucken(verkauf_id: int, background_tasks: BackgroundTasks, session: Session = Depends(get_session),
                   benutzer: Benutzer = Depends(require_bediener)) -> ActionResult:
     """Beleg (Original-Bon) auf Anforderung drucken - z. B. wenn der
     automatische Belegdruck ausgeschaltet ist."""
     v = session.get(Verkauf, verkauf_id)
     if v is None:
         raise HTTPException(status_code=404, detail="Beleg nicht gefunden.")
-    return ActionResult(**print_queue.druck_beleg(session, verkauf_id, benutzer=benutzer.name))
+    result = print_queue.druck_beleg(session, verkauf_id, benutzer=benutzer.name, sofort=False)
+    background_tasks.add_task(_druck_nach_verkauf)
+    return ActionResult(**result)
 
 
 @router.post("/{verkauf_id}/nachdruck", response_model=ActionResult)

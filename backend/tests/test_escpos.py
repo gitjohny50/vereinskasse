@@ -65,6 +65,17 @@ def test_ticket_uses_compact_event_layout_with_time_without_price():
     assert payload.endswith(b"\x1d\x56\x42\x00")
 
 
+def test_ticket_wraps_long_title_before_printer_wraps_mid_word():
+    payload = build_ticket_bytes(
+        {"artikelticket.vorschub_zeilen": "0", "bon.breite_zeichen": "42"},
+        "Jakobusschnitzel mit Kartoffelsalat",
+        "000036",
+        kopf="Kath. Kirche St. Jakobus\nJakobusfest 25.07.2026 15:54",
+    )
+    assert b"Jakobusschnitzel mit\x1b\x64\x01Kartoffelsalat" in payload
+    assert b"Jakobusschnitzel mit Kar" not in payload
+
+
 def test_raster_image_uses_gs_v_0_command():
     payload = EscposBuilder().raster_image(8, 1, b"\x80").build()
     assert payload == b"\x1dv0\x00\x01\x00\x01\x00\x80"

@@ -22,6 +22,10 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(`/api${path}`, { ...init, headers });
+  if (res.status === 401) {
+    setToken(null);
+    window.dispatchEvent(new CustomEvent("vk-auth-expired"));
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     let detail = text;
@@ -62,6 +66,7 @@ async function download(path: string, fallbackName: string): Promise<void> {
 export interface Health { status: string; version: string; db_integrity: string; }
 export interface PrinterStatus { reachable: boolean; known: boolean; paper_ok: boolean | null; cover_closed: boolean | null; detail: string; }
 export interface ActionResult { ok: boolean; detail: string; auftrag_id: number | null; drucker: string | null; }
+export interface ClockStatus { lokal: string; datum: string; uhrzeit: string; zeitzone: string; ntp_aktiv: boolean | null; detail: string; }
 export interface UsbGeraet { vendor_id: string; product_id: string; hersteller: string; produkt: string; beschreibung: string; }
 export interface UsbListe { pyusb_installiert: boolean; geraete: UsbGeraet[]; hinweis: string; }
 export interface Setting { schluessel: string; wert: string; beschreibung: string; }
@@ -140,15 +145,24 @@ export interface BerichtZahlart { zahlungsmethode_id: number | null; bezeichnung
 export interface BerichtArtikel { bezeichnung: string; menge: number; betrag_cent: number; }
 export interface Bericht {
   typ: string; nummer: string | null; abschluss_id: number | null; kassenprofil_id: number;
+  umfang_typ: string; umfang_beschreibung: string;
   von: string | null; bis: string; anzahl_verkaeufe: number;
   waren_cent: number; pfand_cent: number; gesamt_cent: number; bar_cent: number;
   anfangsbestand_cent: number; erwartet_cent: number; gezaehlt_cent: number | null; differenz_cent: number | null;
-  zahlarten: BerichtZahlart[]; artikel: BerichtArtikel[];
+  zahlarten: BerichtZahlart[]; artikel: BerichtArtikel[]; betroffene_belege: number; davon_teiloffen: number;
 }
 export interface KassenabschlussKopf {
-  id: number; nummer: string; kassenprofil_id: number; erstellt_am: string;
+  id: number; nummer: string; kassenprofil_id: number; erstellt_am: string; umfang_typ: string; umfang_beschreibung: string;
   anzahl_verkaeufe: number; waren_cent: number; pfand_cent: number; gesamt_cent: number; bar_cent: number;
   gezaehlt_cent: number | null; differenz_cent: number | null;
+}
+export interface AbschlussOffenSumme { positionen: number; menge: number; umsatz_cent: number; }
+export interface AbschlussOffenKategorie { kategorie_id: number | null; name: string; menge: number; umsatz_cent: number; positionen: number; }
+export interface AbschlussOffenArtikel { artikel_id: number; bezeichnung: string; menge: number; umsatz_cent: number; positionen: number; }
+export interface AbschlussOffen {
+  offen_gesamt: AbschlussOffenSumme;
+  nach_kategorie: AbschlussOffenKategorie[];
+  nach_artikel: AbschlussOffenArtikel[];
 }
 
 type Body = Record<string, unknown>;
@@ -166,6 +180,8 @@ export const api = {
   health: () => req<Health>("/health"),
   printerStatus: () => req<PrinterStatus>("/diagnose/drucker/status"),
   usbGeraete: () => req<UsbListe>("/diagnose/drucker/usb-geraete"),
+  clockStatus: () => req<ClockStatus>("/diagnose/uhr"),
+  setClock: (datum: string, stunde: number, minute: number) => req<ClockStatus>("/diagnose/uhr", { method: "POST", body: j({ datum, stunde, minute }) }),
   testPage: () => req<ActionResult>("/diagnose/drucker/testseite", { method: "POST" }),
   cutTest: (anzahl: number) => req<ActionResult>("/diagnose/drucker/schnitt-test", { method: "POST", body: j({ anzahl }) }),
   openDrawer: (grund: string) => req<ActionResult>("/diagnose/schublade/oeffnen", { method: "POST", body: j({ grund }) }),
@@ -247,8 +263,15 @@ export const api = {
   druckAbbrechen: (id: number) => req<Druckauftrag>(`/druckwarteschlange/${id}/abbrechen`, { method: "POST" }),
 
   // Kassenabschluss (Phase 5)
-  xBericht: (pid: number, anfangsbestand_cent = 0, gezaehlt_cent?: number | null) =>
-    req<Bericht>(`/abschluss/x?kassenprofil_id=${pid}&anfangsbestand_cent=${anfangsbestand_cent}${gezaehlt_cent != null ? `&gezaehlt_cent=${gezaehlt_cent}` : ""}`),
+  abschlussOffen: (pid: number) => req<AbschlussOffen>(`/abschluss/offen?kassenprofil_id=${pid}`),
+  xBericht: (pid: number, anfangsbestand_cent = 0, gezaehlt_cent?: number | null, scope?: { umfang_typ?: string; kategorie_ids?: number[]; artikel_ids?: number[] }) => {
+    const query = new URLSearchParams({ kassenprofil_id: String(pid), anfangsbestand_cent: String(anfangsbestand_cent) });
+    if (gezaehlt_cent != null) query.set("gezaehlt_cent", String(gezaehlt_cent));
+    if (scope?.umfang_typ) query.set("umfang_typ", scope.umfang_typ);
+    if (scope?.kategorie_ids?.length) query.set("kategorie_ids", scope.kategorie_ids.join(","));
+    if (scope?.artikel_ids?.length) query.set("artikel_ids", scope.artikel_ids.join(","));
+    return req<Bericht>(`/abschluss/x?${query.toString()}`);
+  },
   zAbschluss: (b: Body) => req<Bericht>("/abschluss/z", { method: "POST", body: j(b) }),
   abschluesse: (pid: number) => req<KassenabschlussKopf[]>(`/abschluss?kassenprofil_id=${pid}`),
   abschlussArtikeldatenZuruecksetzen: (pid: number, bestaetigung: string, optionen: AbschlussResetOptions) =>

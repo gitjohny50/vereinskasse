@@ -37,6 +37,20 @@ def test_abschluss_bar_mit_rueckgeld(client):
     assert v["zahlung"]["gegeben_cent"] == 1000
 
 
+def test_abschluss_bleibt_ok_wenn_hintergrunddruck_scheitert(client, monkeypatch):
+    def fehlernder_druck(_session):
+        raise RuntimeError("Drucker nicht erreichbar")
+
+    monkeypatch.setattr("app.routers.sales.print_queue.verarbeite_offene", fehlernder_druck)
+    pid, arts, _, zm = _ctx(client)
+    r = client.post("/api/verkauf", json={
+        "kassenprofil_id": pid, "artikel": [{"artikel_id": arts["Cola"]["id"], "menge": 1}],
+        "zahlungsmethode_id": zm["Bar"]["id"], "gegeben_cent": 1000})
+
+    assert r.status_code == 201
+    assert r.json()["belegnummer"] == "000001"
+
+
 def test_belegnummer_increments(client):
     pid, arts, _, zm = _ctx(client)
     body = {"kassenprofil_id": pid, "artikel": [{"artikel_id": arts["Pommes"]["id"], "menge": 1}],

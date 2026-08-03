@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import textwrap
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -241,6 +242,15 @@ def _zeile(links: str, rechts: str, width: int) -> str:
     return links.ljust(platz) + rechts
 
 
+def _zeilen(links: str, rechts: str, width: int) -> list[str]:
+    """Umbrochene Zeilen mit dem Betrag rechts in der letzten Zeile."""
+    platz = max(8, width - len(rechts) - 1)
+    teile = textwrap.wrap(links, width=platz, break_long_words=True, break_on_hyphens=True) or [""]
+    zeilen = teile[:-1]
+    zeilen.append(_zeile(teile[-1], rechts, width))
+    return zeilen
+
+
 def _print_logo_if_configured(b: EscposBuilder, cfg: dict[str, str]) -> None:
     if cfg.get("bon.logo.aktiv", "0") != "1":
         return
@@ -257,6 +267,7 @@ def build_receipt_bytes(
     cfg: dict[str, str], *, bonkopf: str, bonfuss: str, belegnummer: str, zeitpunkt: datetime,
     bediener: str, positionen: list[dict], waren_cent: int, pfand_cent: int, gesamt_cent: int,
     zahlung_name: str, gegeben_cent: int, rueckgeld_cent: int, schublade: bool, kopie: bool = False,
+    zusatz: str = "",
 ) -> bytes:
     """Baut den Kassenbon (Lastenheft 14). Bei kopie=True als Nachdruck gekennzeichnet."""
     width = int(cfg.get("bon.breite_zeichen", "42"))
@@ -269,6 +280,8 @@ def build_receipt_bytes(
     b.size(1, 1).bold(False)
     if kopie:
         b.line("*** KOPIE / NACHDRUCK ***")
+    if zusatz:
+        b.line(zusatz)
     b.feed(1).align("left")
     b.line("-" * width)
     b.line(_zeile("Beleg-Nr:", belegnummer, width))
@@ -276,7 +289,8 @@ def build_receipt_bytes(
     b.line(_zeile("Bediener:", bediener, width))
     b.line("-" * width)
     for p in positionen:
-        b.line(_zeile(f'{p["menge"]} x {p["bezeichnung"]}', format_cents(p["gesamt_cent"]), width))
+        for zeile in _zeilen(f'{p["menge"]} x {p["bezeichnung"]}', format_cents(p["gesamt_cent"]), width):
+            b.line(zeile)
     b.line("-" * width)
     b.line(_zeile("Waren:", format_cents(waren_cent), width))
     if pfand_cent != 0:
@@ -305,6 +319,18 @@ def _ticket_name(bezeichnung: str) -> str:
     if bezeichnung.startswith("Pfand: "):
         return "Pfand " + bezeichnung.removeprefix("Pfand: ")
     return bezeichnung
+
+
+def _ticket_titel_zeilen(bezeichnung: str, width: int) -> list[str]:
+    """Artikelticket-Titel passend fuer doppelte ESC/POS-Zeichenbreite umbrechen."""
+    titel_width = max(10, (width // 2) - 1)
+    text = " ".join(bezeichnung.split())
+    return textwrap.wrap(
+        text,
+        width=titel_width,
+        break_long_words=True,
+        break_on_hyphens=False,
+    ) or [""]
 
 
 def _ticket_liste(positionen: list[dict]) -> list[dict]:
@@ -363,7 +389,9 @@ def _ticket_block(
 
     b.align("center")
     b.bold(False).size(1, 1).line(verein)
-    b.bold(True).size(2, 2).line(bezeichnung)
+    b.bold(True).size(2, 2)
+    for titelzeile in _ticket_titel_zeilen(bezeichnung, int(cfg.get("bon.breite_zeichen", "42"))):
+        b.line(titelzeile)
     b.bold(False).size(1, 1).feed(1)
     detail = " ".join(details).strip()
     b.line(f"{detail}  -{belegnummer}-" if detail else f"-{belegnummer}-")
@@ -448,7 +476,7 @@ def list_usb_devices() -> dict:
     try:
         import usb.core
         import usb.util
-    except Exception:  # pyusb nicht installiert
+    except ImportError:  # pyusb nicht installiert
         return {"pyusb_installiert": False, "geraete": []}
 
     geraete: list[dict] = []
@@ -457,7 +485,7 @@ def list_usb_devices() -> dict:
             def _str(index: int) -> str:
                 try:
                     return usb.util.get_string(dev, index) or ""
-                except Exception:
+                except (OSError, UnicodeDecodeError, ValueError, usb.core.NoBackendError, usb.core.USBError):
                     return ""
             hersteller = _str(dev.iManufacturer) if dev.iManufacturer else ""
             produkt = _str(dev.iProduct) if dev.iProduct else ""
@@ -469,6 +497,6 @@ def list_usb_devices() -> dict:
                 "produkt": produkt,
                 "beschreibung": beschreibung,
             })
-    except Exception as exc:  # z. B. fehlende Berechtigungen
+    except (OSError, PermissionError, usb.core.NoBackendError, usb.core.USBError) as exc:  # z. B. fehlende Berechtigungen
         return {"pyusb_installiert": True, "geraete": [], "hinweis": f"USB-Suche fehlgeschlagen: {exc}"}
     return {"pyusb_installiert": True, "geraete": geraete}

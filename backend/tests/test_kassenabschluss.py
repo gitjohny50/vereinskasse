@@ -43,6 +43,43 @@ def test_z_abschluss_schliesst_und_taggt(client):
     assert x["anzahl_verkaeufe"] == 0
 
 
+def test_teilabschluss_nach_kategorie_laesst_beleg_teiloffen(client):
+    pid, arts, zm = _ctx(client)
+    cola = arts["Cola"]
+    pommes = arts["Pommes"]
+    client.post("/api/verkauf", json={
+        "kassenprofil_id": pid,
+        "artikel": [{"artikel_id": cola["id"], "menge": 1}, {"artikel_id": pommes["id"], "menge": 1}],
+        "zahlungsmethode_id": zm["Bar"]["id"],
+        "gegeben_cent": 1000,
+    })
+
+    offen = client.get("/api/abschluss/offen", params={"kassenprofil_id": pid}).json()
+    assert offen["offen_gesamt"]["positionen"] == 3  # Cola, Pfand, Pommes
+
+    x = client.get("/api/abschluss/x", params={
+        "kassenprofil_id": pid,
+        "umfang_typ": "kategorie",
+        "kategorie_ids": str(cola["kategorie_id"]),
+    }).json()
+    assert x["gesamt_cent"] == 250
+    assert x["betroffene_belege"] == 1
+    assert x["davon_teiloffen"] == 1
+    assert x["bar_cent"] == 0
+
+    z = client.post("/api/abschluss/z", json={
+        "kassenprofil_id": pid,
+        "umfang_typ": "kategorie",
+        "kategorie_ids": [cola["kategorie_id"]],
+    }).json()
+    assert z["umfang_typ"] == "kategorie"
+    assert z["gesamt_cent"] == 250
+
+    rest = client.get("/api/abschluss/x", params={"kassenprofil_id": pid, "umfang_typ": "rest"}).json()
+    assert rest["gesamt_cent"] == 600  # Pommes + Cola-Pfand bleiben offen
+    assert rest["anzahl_verkaeufe"] == 1
+
+
 def test_kassensturz_differenz(client):
     pid, arts, zm = _ctx(client)
     _verkauf(client, pid, arts["Cola"]["id"], 1, zm["Bar"]["id"], gegeben=1000)  # 250 + 200 = 450 bar
@@ -129,6 +166,25 @@ def test_daten_reset_nur_nach_abschluss(client):
     assert client.get("/api/artikel", params={"kassenprofil_id": pid, "mit_archiviert": True}).json() == []
     assert client.get("/api/verkauf", params={"kassenprofil_id": pid}).json() == []
     assert client.get("/api/abschluss", params={"kassenprofil_id": pid}).json() == []
+
+
+def test_daten_reset_blockiert_teiloffene_positionen(client):
+    pid, arts, zm = _ctx(client)
+    cola = arts["Cola"]
+    _verkauf(client, pid, cola["id"], 1, zm["Bar"]["id"], gegeben=1000)
+    client.post("/api/abschluss/z", json={
+        "kassenprofil_id": pid,
+        "umfang_typ": "kategorie",
+        "kategorie_ids": [cola["kategorie_id"]],
+    })
+
+    reset = client.post(
+        "/api/abschluss/daten-zuruecksetzen",
+        params={"kassenprofil_id": pid},
+        json={"bestaetigung": "DATEN LOESCHEN"},
+    )
+
+    assert reset.status_code == 409
 
 
 def test_daten_reset_mit_auswahl(client):

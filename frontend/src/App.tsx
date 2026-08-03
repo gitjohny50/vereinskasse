@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, getToken, setToken, type Kassenprofil, type Session } from "./api";
+import { api, getToken, setToken, type ClockStatus, type Kassenprofil, type Session } from "./api";
 import { Tutorial } from "./components/Tutorial";
 import { tutorialKey } from "./components/TutorialData";
 import { Login } from "./pages/Login";
@@ -41,6 +41,7 @@ export function App() {
   const [theme, setTheme] = useState<string>(() => localStorage.getItem("vk_theme") || "indigo");
   const [headerHidden, setHeaderHidden] = useState<boolean>(() => localStorage.getItem("vk_header_hidden") === "1");
   const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [clockPromptOpen, setClockPromptOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -53,6 +54,14 @@ export function App() {
   useEffect(() => {
     if (!getToken()) { setLoading(false); return; }
     api.me().then(setSession).catch(() => setToken(null)).finally(() => setLoading(false));
+  }, []);
+  useEffect(() => {
+    const abgelaufen = () => {
+      setToken(null);
+      setSession(null);
+    };
+    window.addEventListener("vk-auth-expired", abgelaufen);
+    return () => window.removeEventListener("vk-auth-expired", abgelaufen);
   }, []);
 
   async function ladeProfile() {
@@ -68,6 +77,10 @@ export function App() {
     if (localStorage.getItem(tutorialKey(session.benutzer_id)) !== "1") {
       setTutorialOpen(true);
     }
+  }, [session]);
+  useEffect(() => {
+    if (!session || session.stufe < 30) return;
+    setClockPromptOpen(true);
   }, [session]);
 
   useEffect(() => {
@@ -146,6 +159,7 @@ export function App() {
           <div className="top-actions">
             {themeSwitch}
             <div className="user-chip"><b>{session.name}</b><span>{session.rolle}</span></div>
+            <button className="btn btn-sm reload-btn" aria-label="App neu laden" title="App neu laden" onClick={() => window.location.reload()}>Neu laden</button>
             <button className="btn btn-sm tutorial-help" aria-label="Tutorial starten" title="Tutorial starten" onClick={() => setTutorialOpen(true)}>?</button>
             <button className="btn btn-sm" onClick={handleLogout}>Abmelden</button>
           </div>
@@ -199,6 +213,104 @@ export function App() {
         {tab === "service" && canService && <Diagnose />}
       </main>
       <Tutorial session={session} open={tutorialOpen} onClose={tutorialSchliessen} onTabChange={setTab} />
+      {clockPromptOpen && (
+        <ClockPrompt
+          onClose={() => setClockPromptOpen(false)}
+          onOpenService={() => { setClockPromptOpen(false); setTab("service"); }}
+          onClockSet={async () => {
+            setClockPromptOpen(false);
+            await handleLogout();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ClockPrompt({
+  onClose,
+  onOpenService,
+  onClockSet,
+}: {
+  onClose: () => void;
+  onOpenService: () => void;
+  onClockSet: () => Promise<void>;
+}) {
+  const [clock, setClock] = useState<ClockStatus | null>(null);
+  const [date, setDate] = useState("");
+  const [hour, setHour] = useState("12");
+  const [minute, setMinute] = useState("00");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.clockStatus().then((c) => {
+      setClock(c);
+      setDate(c.datum);
+      const [hh, mm] = c.uhrzeit.split(":");
+      setHour(hh ?? "12");
+      setMinute(mm ?? "00");
+    }).catch(() => { /* Service-Rechte/Backend kurz nicht bereit */ });
+  }, []);
+
+  async function speichern() {
+    const stunde = Number(hour);
+    const minuteWert = Number(minute);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      setClock((c) => c ? { ...c, detail: "Bitte ein gültiges Datum auswählen." } : c);
+      return;
+    }
+    if (!Number.isInteger(stunde) || stunde < 0 || stunde > 23 || !Number.isInteger(minuteWert) || minuteWert < 0 || minuteWert > 59) {
+      setClock((c) => c ? { ...c, detail: "Bitte Stunde 0-23 und Minute 0-59 eingeben." } : c);
+      return;
+    }
+    setBusy(true);
+    try {
+      const updated = await api.setClock(date, stunde, minuteWert);
+      setClock(updated);
+      if (!updated.detail.includes("konnte nicht")) await onClockSet();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-card clock-login-modal">
+        <div className="clock-modal-head">
+          <div>
+            <div className="eyebrow">Systemzeit</div>
+            <h2>Datum und Uhrzeit prüfen</h2>
+          </div>
+          <button className="btn btn-sm" onClick={onClose}>Später</button>
+        </div>
+        <p>Wenn der Pi ohne Ethernet gestartet ist, stelle vor dem Verkauf Datum und Uhrzeit. Danach meldet die Kasse automatisch ab.</p>
+        <div className="clock-current">
+          <span>Aktuell</span>
+          <strong>{clock?.uhrzeit ?? "--:--"}</strong>
+          <small>{clock ? `${clock.datum} · ${clock.zeitzone}` : "Wird geladen"}</small>
+        </div>
+        <div className="clock-form-grid">
+          <label className="clock-date-input">Datum
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </label>
+          <div className="clock-inputs">
+            <label>Stunde
+              <input value={hour} onChange={(e) => setHour(e.target.value.replace(/\D/g, "").slice(0, 2))} inputMode="numeric" />
+            </label>
+            <span>:</span>
+            <label>Minute
+              <input value={minute} onChange={(e) => setMinute(e.target.value.replace(/\D/g, "").slice(0, 2))} inputMode="numeric" />
+            </label>
+          </div>
+        </div>
+        {clock?.detail && <div className={`result ${clock.detail.includes("konnte nicht") ? "err" : "ok"}`}>{clock.detail}</div>}
+        <div className="clock-modal-actions">
+          <button className="btn" onClick={onOpenService}>Service öffnen</button>
+          <button className="btn btn-primary" disabled={busy} onClick={speichern}>
+            {busy ? "Setze…" : "Speichern & neu anmelden"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

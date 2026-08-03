@@ -7,9 +7,13 @@ und Produkt-ID sowie der Endpunkt müssen am echten NetumScan NS-8360L per
 das Modul auch ohne installierte USB-Bibliothek geladen werden kann.
 """
 from __future__ import annotations
+
+import logging
 from time import sleep
 
-from .printer_base import PrinterAdapter, PrintResult, PrinterStatus
+from .printer_base import PrinterAdapter, PrinterStatus, PrintResult
+
+log = logging.getLogger(__name__)
 
 USB_WAKEUP_BYTES = b"\x1b\x40\x1b\x64\x02"
 USB_WAKEUP_DELAY_SECONDS = 0.35
@@ -29,7 +33,7 @@ class UsbPrinter(PrinterAdapter):
 
     def _open(self):
         import usb.core  # lazy import
-        import usb.util  # noqa: F401
+        import usb.util
 
         dev = usb.core.find(idVendor=self.vendor_id, idProduct=self.product_id)
         if dev is None:
@@ -40,13 +44,13 @@ class UsbPrinter(PrinterAdapter):
         try:
             if dev.is_kernel_driver_active(0):
                 dev.detach_kernel_driver(0)
-        except (NotImplementedError, Exception):  # noqa: BLE001 - plattformabhängig
-            pass
+        except (NotImplementedError, Exception):  # noqa: BLE001, RUF100
+            log.debug("USB kernel driver detach skipped.", exc_info=True)
         # Konfiguration setzen; ist sie schon aktiv, ignorieren wir den Fehler.
         try:
             dev.set_configuration()
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001, RUF100
+            log.debug("USB set_configuration skipped.", exc_info=True)
         return dev
 
     def send(self, payload: bytes) -> PrintResult:
@@ -70,8 +74,8 @@ class UsbPrinter(PrinterAdapter):
             if dev is not None:
                 try:
                     usb.util.dispose_resources(dev)
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception:  # noqa: BLE001, RUF100
+                    log.debug("USB dispose after send failed.", exc_info=True)
 
     def status(self) -> PrinterStatus:
         import usb.util
@@ -85,5 +89,5 @@ class UsbPrinter(PrinterAdapter):
             if dev is not None:
                 try:
                     usb.util.dispose_resources(dev)
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception:  # noqa: BLE001, RUF100
+                    log.debug("USB dispose after status failed.", exc_info=True)

@@ -14,8 +14,8 @@ Statuslebenszyklus:  offen -> erfolgreich
 from __future__ import annotations
 
 import base64
-from datetime import datetime, timezone
 import logging
+from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from sqlalchemy import func
@@ -30,6 +30,7 @@ OFFEN = "offen"
 ERFOLGREICH = "erfolgreich"
 FEHLGESCHLAGEN = "fehlgeschlagen"
 ABGEBROCHEN = "abgebrochen"
+log = logging.getLogger(__name__)
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ def _versuch(session: Session, auftrag: models.Druckauftrag, printer: PrinterAda
     try:
         result = printer.send(payload)
         ok, detail = result.ok, result.detail
-    except Exception as exc:  # Adapter, der nicht sauber abfängt  # noqa: BLE001
+    except Exception as exc:  # Adapter, der nicht sauber abfängt
         ok, detail = False, f"Ausnahme: {exc}"
         logger.exception("Druckadapter: Ausnahme beim Senden an den Drucker")
 
@@ -193,6 +194,12 @@ def druck_verkauf(session: Session, verkauf_id: int, schublade: bool, printer: P
         jobs.append(enqueue(session, dokumenttyp="Bon", payload=bon_bytes, verkauf_id=verkauf.id,
                             bezeichnung=f"Beleg {verkauf.belegnummer}"))
 
+    # Schublade separat vor den Artikeltickets öffnen, wenn kein Bon gedruckt wird
+    # (der Bon enthält den Kick bereits) und die Zahlungsart die Schublade vorsieht.
+    if schublade and not auto_beleg and cfg.get("schublade.aktiv", "1") == "1":
+        jobs.append(enqueue(session, dokumenttyp="Schublade", payload=hw.build_drawer_pulse(cfg),
+                            verkauf_id=verkauf.id, bezeichnung="Kassenschublade"))
+
     # Jedes Artikelticket als EIGENEN Auftrag: so erscheint jeder Artikel einzeln
     # im Druckprotokoll und lässt sich einzeln wiederholen; ein hängendes Ticket
     # blockiert die übrigen nicht mehr. Der Vereinsname steht als Kopfzeile darauf.
@@ -207,12 +214,6 @@ def druck_verkauf(session: Session, verkauf_id: int, schublade: bool, printer: P
         jobs.append(enqueue(session, dokumenttyp="Artikelticket", payload=payload,
                             verkauf_id=verkauf.id, bezeichnung=ticket["bezeichnung"]))
 
-    # Schublade nur separat öffnen, wenn kein Bon gedruckt wird (der Bon enthält
-    # den Kick bereits) und die Zahlungsart die Schublade vorsieht.
-    if schublade and not auto_beleg and cfg.get("schublade.aktiv", "1") == "1":
-        jobs.append(enqueue(session, dokumenttyp="Schublade", payload=hw.build_drawer_pulse(cfg),
-                            verkauf_id=verkauf.id, bezeichnung="Kassenschublade"))
-
     if not sofort:
         return {"ok": True, "auftraege": len(jobs), "tickets": len(tickets), "drucker": "warteschlange"}
 
@@ -224,17 +225,25 @@ def druck_verkauf(session: Session, verkauf_id: int, schublade: bool, printer: P
     return {"ok": ok, "auftraege": len(jobs), "tickets": len(tickets), "drucker": p.name}
 
 
-def druck_beleg(session: Session, verkauf_id: int, benutzer: str, printer: PrinterAdapter | None = None) -> dict:
-    """Beleg (Original-Bon) auf Anforderung drucken - ohne Schublade, ohne
-    Tickets, ohne KOPIE-Kennzeichnung."""
+def druck_beleg(
+    session: Session,
+    verkauf_id: int,
+    benutzer: str,
+    printer: PrinterAdapter | None = None,
+    sofort: bool = True,
+) -> dict:
+    """Beleg auf Anforderung einmal als Kundenbeleg drucken."""
     cfg = hw.load_hw_settings(session)
     verkauf = session.get(models.Verkauf, verkauf_id)
     bon_bytes = _verkauf_bon_bytes(session, cfg, verkauf, schublade=False, kopie=False)
     job = enqueue(session, dokumenttyp="Beleg", payload=bon_bytes, verkauf_id=verkauf.id, bezeichnung=f"Beleg {verkauf.belegnummer}")
     session.add(models.AuditLog(benutzer=benutzer, aktion="verkauf.beleg", datensatz=verkauf.belegnummer))
     session.commit()
-    ok = _versuch(session, job, _printer(session, printer))
-    return {"ok": ok, "detail": job.letzte_fehlermeldung, "auftrag_id": job.id, "drucker": job.drucker}
+    if not sofort:
+        return {"ok": True, "detail": "Druckauftrag eingereiht.", "auftrag_id": job.id, "drucker": "warteschlange"}
+    p = _printer(session, printer)
+    ok = _versuch(session, job, p)
+    return {"ok": ok, "detail": job.letzte_fehlermeldung, "auftrag_id": job.id, "drucker": p.name}
 
 
 def druck_nachdruck(session: Session, verkauf_id: int, benutzer: str, printer: PrinterAdapter | None = None) -> dict:
