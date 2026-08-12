@@ -12,18 +12,21 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .. import print_queue, sales
-from ..auth import require_bediener
+from ..auth import STUFE_ADMIN, require_bediener
 from ..database import SessionLocal, get_session
-from ..models import Benutzer, Verkauf
+from ..hardware import service as hw_service
+from ..models import AuditLog, Benutzer, Verkauf
 from ..schemas import (
     ActionResult,
     BerechnungIn,
     BerechnungOut,
+    DrawerOpenWithPinIn,
     PositionOut,
     VerkaufIn,
     VerkaufOut,
     ZahlungOut,
 )
+from ..security import verify_pin
 from ..timeutils import as_utc
 
 router = APIRouter(prefix="/api/verkauf", tags=["verkauf"], dependencies=[Depends(require_bediener)])
@@ -61,6 +64,40 @@ def abschliessen(payload: VerkaufIn, background_tasks: BackgroundTasks, session:
     )
     background_tasks.add_task(_druck_nach_verkauf)
     return _verkauf_out(verkauf)
+
+
+@router.post("/schublade/oeffnen", response_model=ActionResult)
+def schublade_oeffnen(payload: DrawerOpenWithPinIn, session: Session = Depends(get_session),
+                      benutzer: Benutzer = Depends(require_bediener)) -> ActionResult:
+    admin = next(
+        (
+            b for b in session.query(Benutzer).filter(Benutzer.aktiv.is_(True)).all()
+            if b.rolle.stufe >= STUFE_ADMIN and verify_pin(payload.pin, b.pin_hash)
+        ),
+        None,
+    )
+    if admin is None:
+        session.add(AuditLog(
+            benutzer=benutzer.name,
+            aktion="schublade.pin_fehlgeschlagen",
+            datensatz="verkauf",
+            nachher="Admin-PIN falsch",
+        ))
+        session.commit()
+        raise HTTPException(status_code=403, detail="Admin-PIN falsch.")
+
+    session.add(AuditLog(
+        benutzer=benutzer.name,
+        aktion="schublade.manuell_verkauf",
+        datensatz="verkauf",
+        nachher=f"freigegeben durch {admin.name}",
+    ))
+    session.commit()
+    return ActionResult(**hw_service.open_drawer(
+        session,
+        benutzer=benutzer.name,
+        grund=f"manuelle Öffnung im Verkauf, freigegeben durch {admin.name}",
+    ))
 
 
 @router.get("", response_model=list[VerkaufOut])

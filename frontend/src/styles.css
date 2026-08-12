@@ -217,20 +217,25 @@ label input, label select, label textarea { font-weight: 500; color: var(--ink);
 .kachel-name { padding-right: 38px; font-size: 21px; font-weight: 800; color: var(--ink); line-height: 1.12; }
 .kachel-kat { margin-top: auto; font-size: 13px; color: var(--muted); font-weight: 700; }
 .kachel-preis { font-size: 20px; font-weight: 850; color: var(--accent-stark); }
+.kachel-minus { position: absolute; right: 12px; bottom: 12px; z-index: 2; display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--border-stark); border-radius: 50%; background: var(--surface); color: var(--ink); font-size: 22px; line-height: 1; font-weight: 850; cursor: pointer; box-shadow: var(--shadow-sm); touch-action: manipulation; }
+.kachel-minus:hover { border-color: var(--tile-color, var(--accent)); background: var(--accent-weich); color: var(--accent-stark); }
+.kachel-minus:active { transform: translateY(1px); }
 
-.pos-korb { position: sticky; top: 118px; display: flex; flex-direction: column; gap: 12px; height: calc(100vh - 210px); height: calc(100dvh - 210px); max-height: calc(100dvh - 210px); min-height: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow-sm); }
+.pos-korb { position: sticky; top: 118px; display: flex; flex-direction: column; gap: 12px; height: calc(100vh - 210px); height: calc(100dvh - 210px); max-height: calc(100dvh - 210px); min-height: 280px; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow-sm); }
 .header-collapsed .pos-korb { top: 14px; height: calc(100vh - 92px); height: calc(100dvh - 92px); max-height: calc(100dvh - 92px); }
 .header-collapsed .pos-layout { min-height: calc(100vh - 70px); min-height: calc(100dvh - 70px); }
+.korb-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex: 0 0 auto; }
+.korb-toolbar strong { display: block; font-size: 16px; line-height: 1.2; color: var(--ink); }
 .korb-event { display: flex; flex-direction: column; gap: 6px; }
 .event-current { font-size: 12.5px; color: var(--muted); }
-.korb-list-wrap { position: relative; flex: 1 1 auto; min-height: 70px; overflow: hidden; padding-right: 22px; }
+.korb-list-wrap { position: relative; flex: 1 1 auto; min-height: 84px; overflow: hidden; padding-right: 22px; }
 .korb-liste { display: flex; height: 100%; flex-direction: column; gap: 8px; overflow-y: auto; padding-right: 2px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .korb-liste::-webkit-scrollbar { display: none; }
 .korb-slider { position: absolute; top: 0; right: 2px; bottom: 0; width: 14px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); touch-action: none; cursor: pointer; }
 .korb-slider span { position: absolute; left: 2px; right: 2px; min-height: 26px; border-radius: 999px; background: var(--accent); box-shadow: 0 1px 3px rgba(15,23,42,.22); }
-.korb-zeile { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(72px, auto); align-items: center; gap: 10px; }
+.korb-zeile { display: grid; grid-template-columns: minmax(0, 1fr) max-content max-content; align-items: center; gap: 10px; min-height: 48px; padding: 6px 0; }
 .korb-name { min-width: 0; font-weight: 600; font-size: 14.5px; line-height: 1.18; overflow-wrap: anywhere; hyphens: auto; }
-.korb-summe { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 72px; text-align: right; white-space: nowrap; }
+.korb-summe { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 70px; text-align: right; white-space: nowrap; }
 .pos-checkout { position: sticky; bottom: 0; z-index: 2; flex: 0 0 auto; display: flex; flex-direction: column; gap: 9px; border-top: 1px solid var(--border); padding-top: 10px; padding-bottom: 8px; background: var(--surface); box-shadow: 0 -8px 16px rgba(15,23,42,.04); }
 .korb-summen { border-top: none; padding-top: 0; display: flex; flex-direction: column; gap: 3px; }
 .korb-gesamt { font-size: 18px; font-weight: 800; }
@@ -260,6 +265,10 @@ label input, label select, label textarea { font-weight: 500; color: var(--ink);
 .rueckgeld { display: flex; align-items: center; justify-content: space-between; margin-top: 0; padding: 10px 12px; border-radius: 10px; background: #ecfdf5; color: #065f46; font-size: 15px; font-weight: 700; }
 .rueckgeld-gross { font-size: 20px; font-weight: 800; color: var(--accent-stark); }
 .checkout-actions { display: grid; grid-template-columns: 96px 1fr; gap: 10px; }
+.checkout-side-actions { display: flex; flex-direction: column; align-items: stretch; gap: 5px; }
+.link-action { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 12.5px; font-weight: 700; line-height: 1.2; padding: 2px 0; text-align: center; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.link-action:hover { color: var(--accent-stark); }
+.drawer-link { min-height: 24px; }
 .kassieren-btn { min-height: 58px; flex-direction: column; gap: 2px; font-size: 17px; font-weight: 800; }
 .kassieren-btn span { font-size: 15px; font-weight: 700; opacity: .95; }
 .swipe-row { position: relative; overflow: hidden; border-radius: var(--radius-sm); background: var(--danger); }
@@ -323,6 +332,26 @@ label input, label select, label textarea { font-weight: 500; color: var(--ink);
 .stueckelung-chip.muenze { background: #f8fafc; border-color: var(--border-stark); }
 .stueckelung-passend { padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); font-weight: 700; text-align: center; }
 .cash-footer-actions { position: sticky; bottom: 0; z-index: 2; margin: 0 -22px -22px; padding: 12px 22px 18px; background: var(--surface); border-top: 1px solid var(--border); }
+
+.vollkorb-modal { width: min(980px, 100%); display: flex; flex-direction: column; gap: 14px; }
+.vollkorb-list { display: flex; flex-direction: column; gap: 10px; max-height: min(56vh, 560px); overflow-y: auto; padding-right: 4px; -webkit-overflow-scrolling: touch; }
+.vollkorb-row { display: grid; grid-template-columns: minmax(0, 1fr) max-content minmax(110px, max-content); gap: 16px; align-items: center; min-height: 76px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.vollkorb-row.pfand-row { color: var(--accent-stark); background: var(--accent-weich); border-color: var(--accent); }
+.vollkorb-info { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.vollkorb-info strong { font-size: 18px; line-height: 1.16; overflow-wrap: anywhere; hyphens: auto; }
+.vollkorb-info span { color: var(--muted); font-size: 13px; font-weight: 700; }
+.vollkorb-stepper button { width: 40px; height: 40px; font-size: 22px; }
+.vollkorb-stepper span { min-width: 36px; font-size: 18px; }
+.vollkorb-summe { justify-self: end; font-size: 19px; font-weight: 850; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vollkorb-footer { position: sticky; bottom: -22px; display: grid; grid-template-columns: minmax(220px, 320px) minmax(280px, 1fr); align-items: end; gap: 16px; margin: 2px -22px -22px; padding: 14px 22px 18px; border-top: 1px solid var(--border); background: var(--surface); box-shadow: 0 -8px 18px rgba(15,23,42,.06); }
+
+.drawer-pin-modal { width: min(420px, 100%); }
+.drawer-pin-modal .checkout-modal-head strong { font-size: 24px; color: var(--ink); }
+.drawer-pin-help { margin: 0 0 8px; color: var(--muted); font-weight: 650; text-align: center; }
+.drawer-pin-display { margin-top: 0; }
+.drawer-pin-pad { margin-top: 4px; }
+.drawer-pending { margin: 10px 0 0; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--border); font-size: 13.5px; font-weight: 800; text-align: center; }
+.drawer-success { margin: 10px 0 0; padding: 10px 12px; border-radius: var(--radius-sm); color: #065f46; background: #ecfdf5; border: 1px solid #a7f3d0; font-size: 13.5px; font-weight: 800; text-align: center; }
 
 /* ---------- Info-/Struktur-Panels ---------- */
 .info-panel { display: flex; flex-direction: column; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; box-shadow: var(--shadow-sm); }
@@ -436,10 +465,12 @@ label input, label select, label textarea { font-weight: 500; color: var(--ink);
 }
 @media (max-width: 720px) {
   .pos-layout { grid-template-columns: 1fr; }
+  .korb-toolbar { align-items: stretch; flex-direction: column; }
   .kat-filter { position: static; }
-  .pos-korb { position: static; height: auto; min-height: 0; }
+  .pos-korb { position: static; height: auto; max-height: none; min-height: 0; overflow: visible; }
   .pos-checkout { position: sticky; bottom: 10px; border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
-  .korb-liste { max-height: 46vh; }
+  .korb-list-wrap { flex: 0 1 auto; max-height: 46vh; }
+  .korb-liste { height: auto; max-height: 46vh; }
   .user-chip { display: none; }
   .topbar-inner { padding: 8px 14px; min-height: 58px; }
   .tabbar { top: 58px; }
@@ -452,6 +483,10 @@ label input, label select, label textarea { font-weight: 500; color: var(--ink);
   .clock-inputs { grid-template-columns: 1fr auto 1fr; }
   .clock-modal-head { align-items: stretch; flex-direction: column; }
   .clock-modal-actions { grid-template-columns: 1fr; }
+  .vollkorb-row { grid-template-columns: minmax(0, 1fr) max-content; gap: 10px 12px; }
+  .vollkorb-info { grid-column: 1 / -1; }
+  .vollkorb-summe { align-self: center; }
+  .vollkorb-footer { grid-template-columns: 1fr; }
 }
 @media (max-width: 480px) {
   .analytics-stats { grid-template-columns: 1fr; }
@@ -468,6 +503,10 @@ label input, label select, label textarea { font-weight: 500; color: var(--ink);
   .modal-cash-adjust { grid-template-columns: repeat(3, 1fr); }
   .cash-change-panel > strong { font-size: 36px; }
   .cash-footer-actions { margin: 0 -16px -16px; padding: 12px 16px 16px; }
+  .vollkorb-list { max-height: 52vh; }
+  .vollkorb-row { padding: 11px; }
+  .vollkorb-stepper button { width: 36px; height: 36px; }
+  .vollkorb-footer { margin: 0 -16px -16px; padding: 12px 16px 16px; }
   .tutorial-card { padding: 16px; }
   .tutorial-actions { justify-content: stretch; }
   .tutorial-actions .btn { flex: 1 1 auto; min-width: 0; }

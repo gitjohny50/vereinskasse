@@ -146,3 +146,29 @@ def test_nachdruck_und_liste(client):
     assert client.post(f"/api/verkauf/{v['id']}/nachdruck").json()["ok"] is True
     liste = client.get("/api/verkauf", params={"kassenprofil_id": pid}).json()
     assert v["id"] in [x["id"] for x in liste]
+
+
+def test_schublade_im_verkauf_mit_admin_pin(bediener_client, monkeypatch):
+    def fake_open_drawer(_session, benutzer, grund):
+        assert benutzer == "Test Bediener"
+        assert "freigegeben durch Test Admin" in grund
+        return {"ok": True, "detail": "geöffnet", "auftrag_id": None, "drucker": "Testdrucker"}
+
+    monkeypatch.setattr("app.routers.sales.hw_service.open_drawer", fake_open_drawer)
+    r = bediener_client.post("/api/verkauf/schublade/oeffnen", json={"pin": "2222"})
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+
+
+def test_schublade_im_verkauf_lehnt_falsche_admin_pin_ab(bediener_client, monkeypatch):
+    called = False
+
+    def fake_open_drawer(_session, benutzer, grund):
+        nonlocal called
+        called = True
+        return {"ok": True, "detail": "", "auftrag_id": None, "drucker": None}
+
+    monkeypatch.setattr("app.routers.sales.hw_service.open_drawer", fake_open_drawer)
+    r = bediener_client.post("/api/verkauf/schublade/oeffnen", json={"pin": "0000"})
+    assert r.status_code == 403
+    assert called is False
