@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import {
   api, ApiError, euroToCents, formatCents,
   type Artikel, type Berechnung, type Kassenprofil, type Kategorie, type Pfandart,
@@ -9,6 +9,8 @@ type CheckoutStep = "pfand-frage" | "pfand-auswahl" | "zahlung" | "bar";
 
 const EURO_STUECKELUNG = [5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5, 2, 1];
 const BERECHNUNG_RETRY_DELAYS_MS = [120, 300];
+const SCHUBLADE_TIMEOUT_MS = 6500;
+const PIN_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "C", "0", "OK"];
 
 function warten(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -67,10 +69,17 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
   const [erfolg, setErfolg] = useState<V | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>("pfand-frage");
+  const [vollkorbOpen, setVollkorbOpen] = useState(false);
+  const [schubladeOpen, setSchubladeOpen] = useState(false);
+  const [adminPin, setAdminPin] = useState("");
+  const [schubladeBusy, setSchubladeBusy] = useState(false);
+  const [schubladeMeldung, setSchubladeMeldung] = useState<string | null>(null);
+  const [schubladeOk, setSchubladeOk] = useState(false);
   const [korbScroll, setKorbScroll] = useState({ show: false, top: 0, height: 100 });
   const korbListeRef = useRef<HTMLDivElement | null>(null);
   const sliderDrag = useRef(false);
   const abschlussLaeuft = useRef(false);
+  const schubladeAbort = useRef<AbortController | null>(null);
   const berechnungSeq = useRef(0);
   const berechnungKeyRef = useRef<string | null>(null);
   const berechnungPromise = useRef<{ key: string; promise: Promise<Berechnung | null> } | null>(null);
@@ -189,6 +198,9 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
     warenkorbGeaendert();
     setWarenkorb((w) => ({ ...w, [id]: (w[id] ?? 0) + 1 }));
   }
+  function minus(id: number) {
+    setMenge(id, (warenkorb[id] ?? 0) - 1);
+  }
   function setMenge(id: number, n: number) {
     warenkorbGeaendert();
     setWarenkorb((w) => { const c = { ...w }; if (n <= 0) delete c[id]; else c[id] = n; return c; });
@@ -207,6 +219,65 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
   function checkoutSchliessen() {
     setCheckoutOpen(false);
     setFehler(null);
+  }
+  function schubladeDialogOeffnen() {
+    schubladeAbort.current?.abort();
+    schubladeAbort.current = null;
+    setAdminPin("");
+    setSchubladeMeldung(null);
+    setSchubladeOk(false);
+    setSchubladeBusy(false);
+    setSchubladeOpen(true);
+  }
+  function schubladeDialogSchliessen() {
+    schubladeAbort.current?.abort();
+    schubladeAbort.current = null;
+    setSchubladeOpen(false);
+    setAdminPin("");
+    setSchubladeMeldung(null);
+    setSchubladeOk(false);
+    setSchubladeBusy(false);
+  }
+  function pinTaste(taste: string) {
+    setSchubladeMeldung(null);
+    setSchubladeOk(false);
+    if (taste === "C") {
+      setAdminPin("");
+      return;
+    }
+    if (taste === "OK") {
+      void schubladeOeffnen();
+      return;
+    }
+    setAdminPin((p) => (p.length >= 12 ? p : p + taste));
+  }
+  async function schubladeOeffnen() {
+    if (adminPin.length < 4 || schubladeBusy) return;
+    const controller = new AbortController();
+    schubladeAbort.current?.abort();
+    schubladeAbort.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), SCHUBLADE_TIMEOUT_MS);
+    setSchubladeBusy(true);
+    setSchubladeMeldung("Öffne Schublade…");
+    setSchubladeOk(false);
+    try {
+      await api.openSalesDrawer(adminPin, controller.signal);
+      if (schubladeAbort.current !== controller) return;
+      setSchubladeOk(true);
+      setSchubladeMeldung("Schublade wurde geöffnet.");
+      setAdminPin("");
+    } catch (e) {
+      if (schubladeAbort.current !== controller && controller.signal.aborted) return;
+      if (e instanceof DOMException && e.name === "AbortError") setSchubladeMeldung("Keine Antwort vom Drucker. Bitte Verbindung prüfen und erneut versuchen.");
+      else setSchubladeMeldung(e instanceof ApiError ? e.message : "Schublade konnte nicht geöffnet werden.");
+      setAdminPin("");
+    } finally {
+      window.clearTimeout(timeout);
+      if (schubladeAbort.current === controller) {
+        schubladeAbort.current = null;
+        setSchubladeBusy(false);
+      }
+    }
   }
   async function checkoutStarten() {
     if (!hatPositionen) return;
@@ -233,6 +304,11 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
   }
   function artikelFarbe(a: Artikel) {
     return a.kategorie_id ? katById.get(a.kategorie_id)?.farbe || "var(--accent)" : "var(--accent)";
+  }
+  function artikelKachelKeyDown(e: KeyboardEvent<HTMLDivElement>, id: number) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    plus(id);
   }
   
   function updateKorbScroll() {
@@ -334,14 +410,27 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
             const menge = warenkorb[a.id] ?? 0;
             const kat = a.kategorie_id ? katById.get(a.kategorie_id) : null;
             return (
-              <button key={a.id} className={`artikel-kachel ${menge > 0 ? "im-korb" : ""}`} onClick={() => plus(a.id)}
-                style={{ "--tile-color": artikelFarbe(a) } as CSSProperties}>
+              <div key={a.id} className={`artikel-kachel ${menge > 0 ? "im-korb" : ""}`} role="button" tabIndex={0} onClick={() => plus(a.id)} onKeyDown={(e) => artikelKachelKeyDown(e, a.id)}
+                aria-label={`${a.name} hinzufügen`} style={{ "--tile-color": artikelFarbe(a) } as CSSProperties}>
                 <span className="kachel-akzent" />
                 {menge > 0 && <span className="kachel-menge">{menge}</span>}
                 <span className="kachel-name">{a.name}</span>
                 {kat && <span className="kachel-kat">{kat.name}</span>}
                 <span className="kachel-preis">{formatCents(a.preis_cent)}</span>
-              </button>
+                {menge > 0 && (
+                  <button
+                    type="button"
+                    className="kachel-minus"
+                    aria-label={`${a.name} abwählen`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      minus(a.id);
+                    }}
+                  >
+                    −
+                  </button>
+                )}
+              </div>
             );
           })}
           {sichtbar.length === 0 && <p style={{ color: "var(--muted)" }}>Keine Artikel in dieser Kategorie.</p>}
@@ -349,6 +438,13 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
       </div>
 
       <aside className="pos-korb">
+        <div className="korb-toolbar">
+          <div>
+            <div className="eyebrow">Warenkorb</div>
+            <strong>{offenePositionen} Positionen</strong>
+          </div>
+          <button type="button" className="btn btn-sm" disabled={!hatPositionen} onClick={() => setVollkorbOpen(true)}>Groß anzeigen</button>
+        </div>
         <div className="korb-list-wrap" data-tour="verkauf-warenkorb">
           <div className="korb-liste" ref={korbListeRef} onScroll={updateKorbScroll}>
             {artikelItems.length === 0 && pfandItems.length === 0 && (
@@ -413,7 +509,10 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
           {!fehler && sichtbarerBerechnungFehler && <p className="login-error">{sichtbarerBerechnungFehler}</p>}
 
           <div className="checkout-actions">
-            <button className="btn" data-tour="verkauf-leeren" onClick={leeren} disabled={busy}>Leeren</button>
+            <div className="checkout-side-actions">
+              <button className="btn" data-tour="verkauf-leeren" onClick={leeren} disabled={busy}>Leeren</button>
+              <button type="button" className="link-action drawer-link" onClick={schubladeDialogOeffnen}>Schublade öffnen</button>
+            </div>
             <button className="btn btn-primary kassieren-btn" data-tour="verkauf-kassieren" disabled={!kannKassieren} onClick={checkoutStarten}>
               {berechnungBusy ? "Berechne…" : "Kassieren"} <span>{formatCents(gesamt)}</span>
             </button>
@@ -432,6 +531,110 @@ export function Verkauf({ profil }: { profil: Kassenprofil }) {
           </div>
         )}
       </aside>
+
+      {vollkorbOpen && (
+        <div className="checkout-modal-backdrop">
+          <div className="checkout-modal vollkorb-modal" role="dialog" aria-modal="true" aria-label="Warenkorb groß anzeigen">
+            <div className="checkout-modal-head">
+              <div>
+                <div className="eyebrow">Warenkorb</div>
+                <strong>{formatCents(gesamt)}</strong>
+              </div>
+              <button type="button" className="btn btn-sm" onClick={() => setVollkorbOpen(false)}>Schließen</button>
+            </div>
+
+            <div className="vollkorb-list">
+              {artikelItems.length === 0 && pfandItems.length === 0 && (
+                <p style={{ color: "var(--muted)" }}>Warenkorb ist leer. Artikel antippen.</p>
+              )}
+              {Object.entries(warenkorb).filter(([, m]) => m > 0).map(([id, m]) => {
+                const a = artById.get(Number(id));
+                if (!a) return null;
+                return (
+                  <div key={id} className="vollkorb-row">
+                    <div className="vollkorb-info">
+                      <strong>{a.name}</strong>
+                      <span>{formatCents(a.preis_cent)} je Stück</span>
+                    </div>
+                    <span className="stepper vollkorb-stepper">
+                      <button type="button" onClick={() => setMenge(a.id, m - 1)}>−</button>
+                      <span>{m}</span>
+                      <button type="button" onClick={() => setMenge(a.id, m + 1)}>+</button>
+                    </span>
+                    <span className="vollkorb-summe">{formatCents(a.preis_cent * m)}</span>
+                  </div>
+                );
+              })}
+              {pfandItems.map((pi) => {
+                const p = pfandarten.find((x) => x.id === pi.pfandart_id);
+                return (
+                  <div key={`r${pi.pfandart_id}`} className="vollkorb-row pfand-row">
+                    <div className="vollkorb-info">
+                      <strong>Pfand zurück: {p?.name}</strong>
+                      <span>{formatCents(p?.betrag_cent ?? 0)} je Stück</span>
+                    </div>
+                    <span className="stepper vollkorb-stepper">
+                      <button type="button" onClick={() => setRueck(pi.pfandart_id, pi.menge - 1)}>−</button>
+                      <span>{pi.menge}</span>
+                      <button type="button" onClick={() => setRueck(pi.pfandart_id, pi.menge + 1)}>+</button>
+                    </span>
+                    <span className="vollkorb-summe">−{formatCents((p?.betrag_cent ?? 0) * pi.menge).replace("-", "")}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="vollkorb-footer">
+              <div className="korb-summen">
+                <div className="row" style={{ justifyContent: "space-between" }}><span>Waren</span><span>{formatCents(berech?.waren_cent ?? 0)}</span></div>
+                {(berech?.pfand_cent ?? 0) !== 0 && (
+                  <div className="row" style={{ justifyContent: "space-between" }}><span>Pfand</span><span>{formatCents(berech?.pfand_cent ?? 0)}</span></div>
+                )}
+                <div className="row korb-gesamt" style={{ justifyContent: "space-between" }}><span>Gesamt</span><span>{formatCents(gesamt)}</span></div>
+              </div>
+              <div className="checkout-actions">
+                <div className="checkout-side-actions">
+                  <button className="btn" onClick={leeren} disabled={busy}>Leeren</button>
+                  <button type="button" className="link-action drawer-link" onClick={schubladeDialogOeffnen}>Schublade öffnen</button>
+                </div>
+                <button className="btn btn-primary kassieren-btn" disabled={!kannKassieren} onClick={() => { setVollkorbOpen(false); void checkoutStarten(); }}>
+                  {berechnungBusy ? "Berechne…" : "Kassieren"} <span>{formatCents(gesamt)}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {schubladeOpen && (
+        <div className="checkout-modal-backdrop">
+          <div className="checkout-modal drawer-pin-modal" role="dialog" aria-modal="true" aria-label="Schublade öffnen">
+            <div className="checkout-modal-head">
+              <div>
+                <div className="eyebrow">Admin-Freigabe</div>
+                <strong>Schublade öffnen</strong>
+              </div>
+              <button type="button" className="btn btn-sm" onClick={schubladeDialogSchliessen}>Schließen</button>
+            </div>
+            <p className="drawer-pin-help">Admin- oder Service-PIN eingeben.</p>
+            <div className="pin-display drawer-pin-display">{adminPin.replace(/./g, "•") || <span style={{ color: "var(--muted)" }}>––––</span>}</div>
+            <div className="pin-pad drawer-pin-pad">
+              {PIN_KEYS.map((taste) => (
+                <button
+                  key={taste}
+                  type="button"
+                  className={`pin-key ${taste === "OK" ? "pin-ok" : ""}`}
+                  disabled={schubladeBusy}
+                  onClick={() => pinTaste(taste)}
+                >
+                  {taste}
+                </button>
+              ))}
+            </div>
+            {schubladeMeldung && <p className={schubladeOk ? "drawer-success" : schubladeBusy ? "drawer-pending" : "login-error"}>{schubladeMeldung}</p>}
+          </div>
+        </div>
+      )}
 
       {checkoutOpen && (
         <div className="checkout-modal-backdrop">

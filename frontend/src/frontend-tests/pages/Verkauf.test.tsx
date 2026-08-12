@@ -20,6 +20,7 @@ vi.mock('../../api', async (importOriginal: () => Promise<typeof import('../../a
       berechnung: vi.fn().mockResolvedValue({ gesamt_cent: 1250, pfand_cent: 0, waren_cent: 1250 }),
       verkaufAbschluss: vi.fn().mockResolvedValue({ id: 1, belegnummer: 'B-2024-1' }),
       belegDrucken: vi.fn().mockResolvedValue(new Blob()),
+      openSalesDrawer: vi.fn().mockResolvedValue({ ok: true, detail: 'geöffnet', auftrag_id: null, drucker: 'Testdrucker' }),
     },
   };
 });
@@ -260,6 +261,61 @@ describe('Verkauf Component', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /Kassieren/i })).toHaveTextContent('3,00 €');
     });
+  });
+
+  test('sollte einen ausgewählten Artikel direkt auf der Kachel wieder abwählen können', async () => {
+    const user = userEvent.setup();
+    (api.artikel as Mock).mockResolvedValue([
+      { id: 101, name: 'Bier', preis_cent: 300, aktiv: true, archiviert: false },
+    ]);
+    (api.berechnung as Mock).mockResolvedValue({ gesamt_cent: 300, waren_cent: 300, pfand_cent: 0 });
+
+    render(<Verkauf profil={mockProfil} />);
+
+    const artikelKachel = await screen.findByRole('button', { name: 'Bier hinzufügen' });
+    await user.click(artikelKachel);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Kassieren/i })).not.toBeDisabled();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Bier abwählen' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Warenkorb ist leer. Artikel antippen.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Kassieren/i })).toBeDisabled();
+    });
+  });
+
+  test('sollte den Warenkorb in einer großen Ansicht öffnen', async () => {
+    const user = userEvent.setup();
+    (api.artikel as Mock).mockResolvedValue([
+      { id: 101, name: 'Langer Artikelname mit Zeilenumbruch', preis_cent: 450, aktiv: true, archiviert: false },
+    ]);
+    (api.berechnung as Mock).mockResolvedValue({ gesamt_cent: 450, waren_cent: 450, pfand_cent: 0 });
+
+    render(<Verkauf profil={mockProfil} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Langer Artikelname mit Zeilenumbruch hinzufügen' }));
+    await user.click(await screen.findByRole('button', { name: 'Groß anzeigen' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Warenkorb groß anzeigen' })).toBeInTheDocument();
+    expect(screen.getByText('4,50 € je Stück')).toBeInTheDocument();
+  });
+
+  test('sollte die Schublade mit Admin-PIN aus dem Verkauf öffnen', async () => {
+    const user = userEvent.setup();
+
+    render(<Verkauf profil={mockProfil} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Schublade öffnen' }));
+    for (const taste of ['2', '2', '2', '2']) {
+      await user.click(screen.getByRole('button', { name: taste }));
+    }
+    await user.click(screen.getByRole('button', { name: 'OK' }));
+
+    await waitFor(() => expect(api.openSalesDrawer).toHaveBeenCalledWith('2222', expect.any(AbortSignal)));
+    expect(await screen.findByText('Schublade wurde geöffnet.')).toBeInTheDocument();
   });
 
   test('sollte den Abschluss blockieren und einen Fehler zeigen, wenn zu wenig Bargeld gegeben wurde', async () => {

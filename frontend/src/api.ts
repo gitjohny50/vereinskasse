@@ -241,6 +241,7 @@ export const api = {
   // Verkauf
   berechnung: (b: Body) => req<Berechnung>("/verkauf/berechnung", { method: "POST", body: j(b) }),
   verkaufAbschluss: (b: Body) => req<Verkauf>("/verkauf", { method: "POST", body: j(b) }),
+  openSalesDrawer: (pin: string, signal?: AbortSignal) => req<ActionResult>("/verkauf/schublade/oeffnen", { method: "POST", body: j({ pin }), signal }),
   verkaeufe: (pid: number) => req<Verkauf[]>(`/verkauf?kassenprofil_id=${pid}`),
   verkaufDetail: (id: number) => req<Verkauf>(`/verkauf/${id}`),
   nachdruck: (id: number) => req<ActionResult>(`/verkauf/${id}/nachdruck`, { method: "POST" }),

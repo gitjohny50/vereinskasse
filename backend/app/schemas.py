@@ -35,6 +35,10 @@ class DrawerOpenIn(BaseModel):
     grund: str = Field(default="manueller Test", max_length=255)
 
 
+class DrawerOpenWithPinIn(BaseModel):
+    pin: str = Field(min_length=4, max_length=20)
+
+
 class ClockStatusOut(BaseModel):
     lokal: str
     datum: str
