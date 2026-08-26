@@ -1,7 +1,15 @@
-# Erlaubt der Vereinskasse, die Systemuhr ohne Passwortdialog zu setzen.
+# Erlaubt der Vereinskasse, die Systemuhr und die RTC ohne Passwortdialog zu setzen.
 # Installation:
 #   sudo cp deploy/vereinskasse-time.sudoers /etc/sudoers.d/vereinskasse-time
 #   sudo chmod 0440 /etc/sudoers.d/vereinskasse-time
 
 admin ALL=(root) NOPASSWD: /usr/bin/timedatectl
 kasse ALL=(root) NOPASSWD: /usr/bin/timedatectl
+admin ALL=(root) NOPASSWD: /usr/sbin/hwclock
+admin ALL=(root) NOPASSWD: /sbin/hwclock
+admin ALL=(root) NOPASSWD: /usr/bin/hwclock
+admin ALL=(root) NOPASSWD: /bin/hwclock
+kasse ALL=(root) NOPASSWD: /usr/sbin/hwclock
+kasse ALL=(root) NOPASSWD: /sbin/hwclock
+kasse ALL=(root) NOPASSWD: /usr/bin/hwclock
+kasse ALL=(root) NOPASSWD: /bin/hwclock

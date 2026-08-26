@@ -7,6 +7,7 @@ geschaltet; der Platzhalter-Benutzer wird protokolliert.
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -20,6 +21,13 @@ from ..timeutils import local_tz, now_local
 
 # Hardware-Diagnose erfordert Servicetechniker-Rechte (Lastenheft 6.3).
 router = APIRouter(prefix="/api/diagnose", tags=["diagnose"], dependencies=[Depends(require_service)])
+
+
+def _hwclock_command() -> list[str] | None:
+    for path in ("/usr/sbin/hwclock", "/sbin/hwclock", "/usr/bin/hwclock", "/bin/hwclock"):
+        if Path(path).exists():
+            return ["sudo", "-n", path, "--systohc"]
+    return None
 
 
 def _clock_status(detail: str = "") -> ClockStatusOut:
@@ -98,7 +106,25 @@ def uhr_stellen(payload: ClockSetIn, benutzer: Benutzer = Depends(require_servic
             if res.stderr.strip():
                 detail += f" · {res.stderr.strip()}"
             return _clock_status(detail)
-    return _clock_status(f"Uhr gestellt von {benutzer.name} auf {ziel.strftime('%d.%m.%Y %H:%M')}.")
+
+    hwclock_cmd = _hwclock_command()
+    if hwclock_cmd is None:
+        return _clock_status(
+            f"Uhr gestellt von {benutzer.name} auf {ziel.strftime('%d.%m.%Y %H:%M')}. "
+            "RTC wurde nicht geschrieben: hwclock ist nicht installiert."
+        )
+
+    res = subprocess.run(hwclock_cmd, check=False, capture_output=True, text=True, timeout=5)
+    if res.returncode != 0:
+        detail = (
+            f"Uhr gestellt von {benutzer.name} auf {ziel.strftime('%d.%m.%Y %H:%M')}. "
+            "RTC konnte nicht geschrieben werden. Bitte sudoers fuer hwclock pruefen."
+        )
+        if res.stderr.strip():
+            detail += f" · {res.stderr.strip()}"
+        return _clock_status(detail)
+
+    return _clock_status(f"Uhr gestellt von {benutzer.name} auf {ziel.strftime('%d.%m.%Y %H:%M')} und in die RTC geschrieben.")
 
 
 @router.post("/drucker/testseite", response_model=ActionResult)

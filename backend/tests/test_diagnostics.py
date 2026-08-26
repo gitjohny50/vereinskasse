@@ -3,6 +3,8 @@
 Der Standard-Transport ist 'mock', sodass kein Drucker nötig ist.
 """
 
+from types import SimpleNamespace
+
 
 def test_health_reports_ok_and_integrity(client):
     r = client.get("/api/health")
@@ -37,6 +39,27 @@ def test_drawer_open_logged(client):
     r = client.post("/api/diagnose/schublade/oeffnen", json={"grund": "Abnahmetest"})
     assert r.status_code == 200
     assert r.json()["ok"] is True
+
+
+def test_uhr_stellen_schreibt_rtc_mit_hwclock(client, monkeypatch):
+    commands = []
+
+    def fake_run(cmd, **_kwargs):
+        commands.append(cmd)
+        if cmd[:3] == ["timedatectl", "show", "-p"]:
+            return SimpleNamespace(returncode=0, stdout="no\n", stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(
+        "app.routers.diagnostics._hwclock_command",
+        lambda: ["sudo", "-n", "/usr/sbin/hwclock", "--systohc"],
+    )
+    monkeypatch.setattr("app.routers.diagnostics.subprocess.run", fake_run)
+
+    r = client.post("/api/diagnose/uhr", json={"datum": "2026-08-26", "stunde": 14, "minute": 30})
+    assert r.status_code == 200
+    assert "RTC" in r.json()["detail"]
+    assert ["sudo", "-n", "/usr/sbin/hwclock", "--systohc"] in commands
 
 
 def test_settings_roundtrip(client):

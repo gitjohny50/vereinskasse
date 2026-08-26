@@ -188,14 +188,24 @@ timedatectl
 ```
 
 Wenn Ethernet mit Internet vorhanden ist, synchronisiert der Pi die Uhr per NTP.
-Ohne Internet läuft die Uhr lokal weiter. Für lange Offline-Zeiträume ist ein
-RTC-Modul sinnvoll, z. B. DS3231, damit die Uhr nach Stromverlust nicht falsch
-startet.
+Ohne Internet läuft die Uhr lokal weiter. Für lange Offline-Zeiträume ist die
+interne RTC des Raspberry Pi 5 mit Batterie sinnvoll, damit die Uhr nach
+Stromverlust nicht falsch startet.
+
+Auf Raspberry Pi 5 wird die interne RTC verwendet. Es ist kein externes
+DS3231-Overlay nötig. Wenn `hwclock` installiert ist, schreibt die Kasse beim
+Setzen der Uhrzeit im Servicebereich die Systemzeit zusätzlich in die RTC.
+
+```bash
+sudo apt install -y util-linux util-linux-extra
+cat /sys/class/rtc/rtc0/name
+sudo hwclock -r
+```
 
 Empfehlung:
 
 - Normalbetrieb: Systemzeit + NTP über Ethernet
-- Offline-Fest über mehrere Tage: zusätzlich RTC-Modul
+- Offline-Fest über mehrere Tage: interne Raspberry-Pi-5-RTC mit Batterie
 - Keine Zeit aus dem iPad beziehen; das iPad ist nur Client
 - Keine Zeit aus SumUp beziehen; SumUp ist externer Dienst und nicht immer da
 

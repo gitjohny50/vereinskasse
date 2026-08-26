@@ -17,7 +17,11 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 apt-get update
-apt-get install -y avahi-daemon avahi-utils chrony network-manager curl
+APT_PACKAGES=(avahi-daemon avahi-utils chrony network-manager curl util-linux)
+if apt-cache show util-linux-extra >/dev/null 2>&1; then
+  APT_PACKAGES+=(util-linux-extra)
+fi
+apt-get install -y "${APT_PACKAGES[@]}"
 
 hostnamectl set-hostname "${HOSTNAME}"
 systemctl enable --now avahi-daemon
@@ -83,5 +87,9 @@ Optionaler lokaler iPad-Zugang ohne externes Netzwerk:
 
 WLAN-Zugangsdaten, falls Profil erzeugt wurde:
   sudo cat /etc/vereinskasse/local-ap.txt
+
+RTC prüfen:
+  command -v hwclock
+  timedatectl
 
 EOF

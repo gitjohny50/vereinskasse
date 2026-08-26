@@ -11,8 +11,11 @@ noch keine produktive, rechtskonforme Inbetriebnahme (siehe Lastenheft 26).
 
 ```bash
 sudo apt update && sudo apt full-upgrade -y
-sudo apt install -y python3-venv python3-pip nodejs npm chromium-browser xserver-xorg xinit unclutter curl avahi-daemon avahi-utils chrony network-manager nginx openssl
+sudo apt install -y python3-venv python3-pip nodejs npm chromium-browser xserver-xorg xinit unclutter curl avahi-daemon avahi-utils chrony network-manager nginx openssl util-linux util-linux-extra
 ```
+
+Falls das Image `util-linux-extra` nicht kennt, den Befehl ohne dieses Paket
+wiederholen. `hwclock` muss danach über `command -v hwclock` auffindbar sein.
 
 - Dedizierten Benutzer `kasse` anlegen (falls nicht vorhanden):
 
@@ -105,6 +108,7 @@ Kurz prüfen:
 ```bash
 curl -k https://kasse.local/api/health
 curl -s http://127.0.0.1:8000/api/health
+command -v hwclock
 ```
 
 ## 7. USB-Autostart des X-Servers (falls nötig)
